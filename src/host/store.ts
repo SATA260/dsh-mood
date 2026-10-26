@@ -3,14 +3,14 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { baseline, clamp, decay, emotionReaction, halfLives } from '../core/math.js'
-import { resolveDynamics } from '../core/config.js'
+import { resolveDynamics, restoreDynamics } from '../core/config.js'
 import type { DynamicsConfig } from '../core/config.js'
 import { InputError, parseEmotion, parseTrait, parseTraitPatch, VersionConflict } from '../core/validation.js'
 import { EMOTION_DEFINITIONS, EMOTION_IDS, TRAIT_DEFINITIONS, TRAIT_IDS } from '../shared/types.js'
 import type { CallContext, EmotionInput, Emotions, Evidence, HistoryEntry, HistoryPage, MutationResult, ParameterId, PromptSnapshot, StateSnapshot, TraitInput, Traits } from '../shared/types.js'
 
 interface EngineState { at: number; traits: Traits; emotions: Emotions; configVersion: string }
-interface Projection { after: EngineState; actualChanges: Partial<Record<ParameterId, number>>; limited: string[] }
+interface Projection { after: EngineState; actualChanges: Partial<Record<ParameterId, number>>; limited: string[]; effectSummary?: string }
 interface CommandRow {
   id: number
   kind: HistoryEntry['kind']
@@ -30,7 +30,7 @@ interface BudgetItem { at: number; kind: string; changes: Partial<Record<Paramet
 type DbRow = Record<string, unknown>
 
 // A formula change must introduce a new rule version and a replay migration.
-function configHash(config: DynamicsConfig): string { return `v1-${createHash('sha256').update(JSON.stringify(config)).digest('hex').slice(0, 20)}` }
+function configHash(config: DynamicsConfig): string { return `v${config.reactionVersion}-${createHash('sha256').update(JSON.stringify(config)).digest('hex').slice(0, 20)}` }
 function parse<T>(text: string): T { return JSON.parse(text) as T }
 function delta(before: StateSnapshot, after: StateSnapshot): Partial<Record<ParameterId, number>> {
   const result: Partial<Record<ParameterId, number>> = {}
@@ -135,7 +135,7 @@ export class MoodStore {
   private loadConfig(version: string): DynamicsConfig {
     const row = this.db.prepare('SELECT value FROM configs WHERE version=?').get(version) as { value: string } | undefined
     if (!row) throw new Error(`缺少历史计算配置 ${version}`)
-    return resolveDynamics(parse<unknown>(row.value))
+    return restoreDynamics(parse<unknown>(row.value))
   }
 
   snapshot(at = this.now()): StateSnapshot {
@@ -179,9 +179,21 @@ export class MoodStore {
     const row = this.db.prepare('SELECT * FROM evidence WHERE id=?').get(id) as { id: string; session_id: string; kind: Evidence['kind']; at: number; text: string; traits: string } | undefined
     return row ? { id: row.id, sessionId: row.session_id, kind: row.kind, at: row.at, text: row.text, traits: parse<Traits>(row.traits) } : undefined
   }
-  recentEvidence(limit = 32): Evidence[] {
-    const rows = this.db.prepare('SELECT id FROM evidence ORDER BY at DESC,rowid DESC LIMIT ?').all(limit) as { id: string }[]
-    return rows.map(row => this.getEvidence(row.id)!)
+  personalityEvidence(attribute: typeof TRAIT_IDS[number]): { id: string; at: number; summary: string }[] {
+    if (!TRAIT_IDS.includes(attribute)) throw new InputError('未知性格属性')
+    // Only adjudicated emotion events are candidates, never arbitrary chat/tool text.
+    // Exclude evidence already consumed by this trait, matching applyPersonality().
+    const rows = this.db.prepare(`
+      SELECT e.source_id,e.effective_at,e.reason FROM commands e
+      WHERE e.kind='emotion' AND e.valid=1 AND e.source_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM commands p,json_each(p.evidence_ids) ids
+          WHERE p.kind='personality' AND json_extract(p.payload,'$.input.attribute_id')=?
+            AND ids.value=e.source_id
+        )
+      ORDER BY e.effective_at DESC,e.id DESC LIMIT 6
+    `).all(attribute) as { source_id: string; effective_at: number; reason: string }[]
+    return rows.map(row => ({ id: row.source_id, at: row.effective_at, summary: row.reason.slice(0, 120) }))
   }
   private resolveEvidence(reference: string, ctx: CallContext): Evidence {
     const id = reference === 'current_user_message' ? ctx.currentUserId : reference === 'last_tool_result' ? ctx.lastToolId : reference
@@ -220,6 +232,8 @@ export class MoodStore {
       state.at = row.effective_at
       const changes: Projection['actualChanges'] = {}
       const limited: string[] = []
+      const limits = new Set<string>()
+      let effectSummary: string | undefined
       const used = (kind: string, id: ParameterId, window: number): number => budget.reduce((sum, item) => item.kind === kind && item.at > row.effective_at - window ? sum + Math.abs(item.changes[id] ?? 0) : sum, 0)
       if (row.valid && row.kind === 'emotion') {
         const payload = parse<EmotionPayload>(row.payload)
@@ -230,9 +244,17 @@ export class MoodStore {
           const after = clamp(before + clamp(reaction[id], -remaining, remaining), id === 'valence' || id === 'affinity' ? -100 : 0, 100)
           const actual = after - before
           if (actual !== 0) changes[id] = actual
-          if (Math.abs(actual - reaction[id]) > 1e-10) limited.push(id)
+          if (Math.abs(actual - reaction[id]) > 1e-10) {
+            limited.push(id)
+            if (Math.abs(reaction[id]) > config.emotionPerEvent) limits.add('单事件额度')
+            if (Math.abs(reaction[id]) > Math.max(0, config.emotionPerHour - used('emotion', id, 3_600_000))) limits.add('一小时滚动额度')
+            if (Math.abs(actual - clamp(reaction[id], -remaining, remaining)) > 1e-10) limits.add('量程边界')
+          }
           state.emotions[id] = after
         }
+        if (!Object.keys(changes).length) {
+          effectSummary = limits.size ? `事件已记录，数值未变化：受${[...limits].join('、')}限制。` : payload.input.features.every(f => config.emotionLevels[f.intensity] === 0) ? '事件已记录，数值未变化：所有特征的程度均为 none。' : '事件已记录，数值未变化：当前性格映射或特征抵消后的净反应为 0。'
+        } else if (limits.size) effectSummary = `已产生实际变化；部分反应受${[...limits].join('、')}限制。`
       } else if (row.valid && row.kind === 'personality') {
         const { input } = parse<TraitPayload>(row.payload)
         const id = input.attribute_id
@@ -252,7 +274,7 @@ export class MoodStore {
         state.configVersion = parse<{ configVersion: string }>(row.payload).configVersion
         config = this.loadConfig(state.configVersion)
       }
-      const projection: Projection = { after: structuredClone(state), actualChanges: changes, limited }
+      const projection: Projection = { after: structuredClone(state), actualChanges: changes, limited, ...(effectSummary ? { effectSummary } : {}) }
       update.run(JSON.stringify(projection), row.id)
       if (row.id === changedId) changedProjection = projection
       budget.push({ at: row.effective_at, kind: row.kind, changes })
@@ -301,7 +323,7 @@ export class MoodStore {
       const id = this.insertCommand('emotion', source.at, { input: proposal, sourceTraits: source.traits } satisfies EmotionPayload, [...evidenceIds], proposal.features.map(f => f.reason).join('；'), source.id)
       const projection = this.recompute(id)
       this.bumpVersion()
-      return this.result(Object.keys(projection.actualChanges).length ? 'applied' : 'unchanged', projection.limited.length ? '已按剩余额度与数值边界保存。' : '已保存本次情绪变化。', projection.actualChanges, projection.limited)
+      return this.result(Object.keys(projection.actualChanges).length ? 'applied' : 'unchanged', projection.effectSummary ?? '已保存本次情绪变化。', projection.actualChanges, projection.limited)
     })
   }
 
@@ -309,6 +331,7 @@ export class MoodStore {
     return this.applyCall(ctx, () => {
       const proposal = parseTrait(input)
       proposal.evidence = this.resolveEvidenceIds(proposal.evidence, ctx)
+      for (const id of proposal.evidence) if (this.db.prepare('SELECT id FROM commands WHERE source_id=? AND valid=0').get(id)) throw new InputError('引用的情绪事件已撤销，不能再用于新的性格变化。')
       if (proposal.evidence.length < this.config.minTraitEvidence) throw new InputError(`性格慢变至少需要 ${this.config.minTraitEvidence} 个不同事件支持。`)
       const patternKey = JSON.stringify([proposal.attribute_id, [...proposal.evidence].sort()])
       if (this.db.prepare('SELECT id FROM commands WHERE pattern_key=?').get(patternKey)) throw new InputError('这组性格依据已经使用，不能重复累加。')
@@ -364,7 +387,7 @@ export class MoodStore {
       const projection = row.projection ? parse<Projection>(row.projection) : undefined
       return { id: row.id, kind: row.kind, at: row.effective_at, committedAt: row.committed_at, reason: row.reason,
         evidenceIds: parse<string[]>(row.evidence_ids), ...(row.source_id ? { sourceId: row.source_id } : {}),
-        valid: Boolean(row.valid), needsReview: Boolean(row.needs_review), actualChanges: projection?.actualChanges ?? {}, limited: projection?.limited ?? [] }
+        valid: Boolean(row.valid), needsReview: Boolean(row.needs_review), actualChanges: projection?.actualChanges ?? {}, limited: projection?.limited ?? [], ...(projection?.effectSummary ? { effectSummary: projection.effectSummary } : {}) }
     })
     return { items, ...(rows.length > count ? { nextCursor: items.at(-1)!.id } : {}) }
   }

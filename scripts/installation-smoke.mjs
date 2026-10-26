@@ -12,7 +12,8 @@ const bin = join(dirname(manifestPath), manifest.bin.dsh)
 const home = await mkdtemp(join(tmpdir(), 'mood-install-'))
 const resultPath = join(home, 'probe.json')
 const env = { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1', DSH_MOOD_SMOKE_RESULT: resultPath }
-const tarball = resolve('dist/dsh-mood-0.1.0.tgz')
+const pluginManifest = JSON.parse(await readFile('package.json', 'utf8'))
+const tarball = resolve(`dist/dsh-mood-${pluginManifest.version}.tgz`)
 let child
 async function command(args) {
   let output = ''

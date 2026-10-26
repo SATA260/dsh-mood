@@ -1,0 +1,7 @@
+{
+  "unit": "characters, not tokens",
+  "beforeEmpty": 1698,
+  "before32Evidence": 11543,
+  "after": 843,
+  "staticReductionPercent": 50
+}

@@ -1,9 +1,9 @@
 {
-  "filename": "dsh-mood-0.1.0.tgz",
-  "size": 8010881,
-  "unpackedSize": 9372304,
-  "shasum": "517148d89992094e7e0c54070734a9c8f5112dd2",
-  "integrity": "sha512-cW0b2eFzQ8YqcBhHcVzlRgecRiYd1aZ9LmMpOpDFDDXSBfKtqQeSFXuQwJ0lFfWVeN/KNOhI5oBoICKDr54rTQ==",
+  "filename": "dsh-mood-0.1.4.tgz",
+  "size": 8017675,
+  "unpackedSize": 9393171,
+  "shasum": "3710b88806687a736618d6472d7bc97325583526",
+  "integrity": "sha512-H0lLidaB14TwaM/qwqEStDXhgGE24waDPe6OcfBscb0o+vrIsAQMSa+q/KtsioJw0PQbrZherIER1qbnY8os8Q==",
   "stickers": 32,
-  "files": 64
+  "files": 66
 }

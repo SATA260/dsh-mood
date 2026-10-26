@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { defineTool, ToolRuntime } from '@deepseek-ai/dsh-tools'
+import { defineTool, jsonSchemaToTs, ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { MessageId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -85,6 +85,62 @@ describe('DSH 0.2.1-rc.2 real Cordis / SystemPrompt / ToolRuntime integration, w
     const selfReference = await call('try-own-error', { event_id: 'last_tool_result', features: [{ ...args.features[0], evidence: ['last_tool_result'] }] })
     expect(selfReference.value).toMatchObject({ status: 'rejected' })
     expect(ctx.mood.getState().version).toBe(1)
+  })
+  it('inspects bounded event summaries only on demand, without writes, and still requires evidence to update', async () => {
+    const { ctx } = await host()
+    const a = agent(ctx, 'chat-evidence')
+    const call = (name: string, id: string, args: unknown) => ctx.tools.execute({ agent: a, callId: ToolCallId(id), name, arguments: args, signal: new AbortController().signal })
+    await pre(ctx, a, 1, 1, 'raw-only')
+    const inspect = () => call('mood_update_personality', 'inspect', { mode: 'inspect', attribute_id: 'explore_pref' })
+    expect((await inspect()).value).toEqual({ status: 'inspection', candidates: [], minimumEvents: 3 })
+    expect(ctx.mood.getState().version).toBe(0)
+    for (let i = 1; i <= 8; i++) {
+      await pre(ctx, a, i + 1, 1, `u${i}`)
+      const result = await call('mood_update_emotion', `emotion-${i}`, { event_id: 'current_user_message', features: [{ feature_id: 'novelty', direction: 'positive', intensity: 'slight', reason: `探索事件${i} ${'摘'.repeat(200)}`, evidence: ['current_user_message'] }] })
+      expect(result.isError).toBeFalsy()
+      expect(result.value).toMatchObject({ state: { version: i, traits: {}, emotions: {} } })
+      expect(JSON.stringify(result.value)).not.toContain('definitions')
+    }
+    const result = await inspect()
+    const candidates = (result.value as { candidates: { id: string; summary: string }[] }).candidates
+    expect(candidates).toHaveLength(6)
+    expect(candidates.every(c => c.summary.length <= 120)).toBe(true)
+    expect(JSON.stringify(candidates)).not.toMatch(/实际消息|raw-only/)
+    expect(ctx.mood.getState().version).toBe(8)
+    expect(ctx.mood.listChanges({ limit: 100 }).items).toHaveLength(8)
+    const missing = await call('mood_update_personality', 'missing-fields', { attribute_id: 'explore_pref' })
+    expect(missing.value).toMatchObject({ status: 'rejected' })
+    const ids = candidates.slice(0, 3).map(c => c.id)
+    const update = await call('mood_update_personality', 'trait-update', { attribute_id: 'explore_pref', direction: 'positive', intensity: 'slight', reason: '多次探索呈现稳定倾向', evidence: ids })
+    expect(update.value).toMatchObject({ status: 'applied' })
+    expect(ctx.mood.getState().version).toBe(9)
+    const remaining = (await inspect()).value as { candidates: { id: string }[] }
+    expect(remaining.candidates.every(c => !ids.includes(c.id))).toBe(true)
+    const event = ctx.mood.listChanges({}).items.find(e => e.sourceId === remaining.candidates[0]!.id)!
+    ctx.mood.invalidateEvent({ eventId: event.id, expectedVersion: 9 })
+    const corrected = (await inspect()).value as { candidates: { id: string }[] }
+    expect(corrected.candidates.some(c => c.id === event.sourceId)).toBe(false)
+    expect((await call('mood_update_personality', 'inspect-write', { mode: 'inspect', attribute_id: 'explore_pref', direction: 'positive' })).isError).toBe(true)
+  })
+  it('rejects ambiguous conflict signs in the real SDK, raises anger for insults and lowers it for repair', async () => {
+    const { ctx } = await host()
+    const projected = jsonSchemaToTs(ctx.tools.schemas().find(s => s.name === 'mood_update_emotion')!.parameters)
+    expect(projected).not.toBe('unknown')
+    expect(projected).toContain('"present" | "relieved"')
+    const a = agent(ctx, 'anger-regression')
+    const call = (id: string, direction: string, reason: string) => ctx.tools.execute({ agent: a, callId: ToolCallId(id), name: 'mood_update_emotion', arguments: { event_id: 'current_user_message', features: [{ feature_id: 'conflict', direction, intensity: 'moderate', reason, evidence: ['current_user_message'] }] }, signal: new AbortController().signal })
+    await pre(ctx, a, 1, 1, 'insult')
+    expect((await call('bad-negative', 'negative', '被明确冒犯')).isError).toBe(true)
+    expect((await call('bad-positive', 'positive', '被明确冒犯')).isError).toBe(true)
+    expect(ctx.mood.getState().version).toBe(0)
+    expect(ctx.mood.listChanges({}).items).toEqual([])
+    expect((await call('insult-corrected', 'present', '被明确冒犯')).value).toMatchObject({ actualChanges: { anger: 5 } })
+    await pre(ctx, a, 2, 1, 'repair')
+    const repaired = await call('repair-correct', 'relieved', '对方收回冒犯，冲突明确缓解')
+    expect(repaired.isError).toBeFalsy()
+    const value = repaired.value as { actualChanges: { anger: number }; state: { emotions: { anger: number } } }
+    expect(value.actualChanges.anger).toBeLessThan(0)
+    expect(value.state.emotions.anger).toBe(0)
   })
 })
 

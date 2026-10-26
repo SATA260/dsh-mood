@@ -31,6 +31,7 @@
     "src/remote.ts"
   ],
   "exclude": [
-    "src/stickers/assets.ts"
+    "src/stickers/assets.ts",
+    "src/stickers/service.ts"
   ]
 }

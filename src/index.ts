@@ -9,6 +9,7 @@ import { MoodStore } from './host/store.js'
 import { moodTools } from './host/tools.js'
 import { PromptManager } from './prompt/manager.js'
 import { registerStickerAssets } from './stickers/assets.js'
+import { StickerService } from './stickers/service.js'
 import { MoodService } from './host/service.js'
 import type { CallContext } from './shared/types.js'
 
@@ -29,6 +30,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const store = new MoodStore(join(config.dataDir ?? join(profile!.dir, 'data', 'dsh-mood'), 'mood.sqlite'), { dynamics: config.dynamics })
   ctx.effect(() => () => store.close())
   ctx.plugin(MoodService, { store })
+  ctx.plugin(StickerService)
   registerStickerAssets(ctx)
   const prompt = new PromptManager(store)
   const references = new Map<string, CallContext>()

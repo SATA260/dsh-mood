@@ -3,7 +3,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MoodStore } from '../../src/host/store.js'
+import { DEFAULT_DYNAMICS } from '../../src/core/config.js'
 import { VersionConflict } from '../../src/core/validation.js'
+import { PRESENCE_FEATURE_IDS } from '../../src/shared/types.js'
 import type { EmotionFeature, FeatureId } from '../../src/shared/types.js'
 
 const opened: MoodStore[] = []
@@ -16,7 +18,7 @@ function setup(path = ':memory:', dynamics: unknown = {}) {
   opened.push(store)
   const add = (id = `e${++seq}`, sessionId = 's1') => { store.addEvidence({ id, sessionId, kind: 'user', at: time, text: `事件 ${id}` }); return id }
   const ctx = () => ({ sessionId: 's1', callId: `c${++seq}`, currentUserId: 'current' })
-  const emotion = (id: string, feature: FeatureId = 'conflict', direction: 'positive' | 'negative' = 'positive', intensity: EmotionFeature['intensity'] = 'intense') => store.applyEmotion({ event_id: id, features: [{ feature_id: feature, direction, intensity, reason: '实际发生的事件', evidence: [id] }] }, ctx())
+  const emotion = (id: string, feature: FeatureId = 'conflict', direction?: EmotionFeature['direction'], intensity: EmotionFeature['intensity'] = 'intense') => store.applyEmotion({ event_id: id, features: [{ feature_id: feature, direction: direction ?? ((PRESENCE_FEATURE_IDS as readonly string[]).includes(feature) ? 'present' : 'positive'), intensity, reason: '实际发生的事件', evidence: [id] }] }, ctx())
   const trait = (ids: string[], attribute_id = 'explore_pref', intensity = 'intense') => store.applyPersonality({ attribute_id, direction: 'positive', intensity, reason: '持续经历形成模式', evidence: ids }, ctx())
   return { store, add, ctx, emotion, trait, advance: (ms: number) => { time += ms }, now: () => time }
 }
@@ -33,7 +35,7 @@ describe('持久化与可信变化', () => {
   it('工具调用与事件分别去重，重复请求不会再次占额度', () => {
     const t = setup()
     const id = t.add()
-    const input = { event_id: id, features: [{ feature_id: 'conflict', direction: 'positive', intensity: 'moderate', reason: '冲突', evidence: [id] }] }
+    const input = { event_id: id, features: [{ feature_id: 'conflict', direction: 'present', intensity: 'moderate', reason: '冲突', evidence: [id] }] }
     const ctx = t.ctx()
     const first = t.store.applyEmotion(input, ctx)
     expect(first.state.emotions.anger).toBe(5)
@@ -47,7 +49,7 @@ describe('持久化与可信变化', () => {
   it('数字、未知字段、未知依据和重复依据都不能绕过校验', () => {
     const t = setup()
     const id = t.add()
-    const base = { event_id: id, features: [{ feature_id: 'conflict', direction: 'positive', intensity: 'moderate', reason: '冲突', evidence: [id] }] }
+    const base = { event_id: id, features: [{ feature_id: 'conflict', direction: 'present', intensity: 'moderate', reason: '冲突', evidence: [id] }] }
     expect(t.store.applyEmotion({ ...base, delta: 100 }, t.ctx()).status).toBe('rejected')
     expect(t.emotion('invented').status).toBe('rejected')
     expect(t.store.applyEmotion({ ...base, features: [{ ...base.features[0], intensity: 100 }] }, t.ctx()).status).toBe('rejected')
@@ -67,11 +69,43 @@ describe('持久化与可信变化', () => {
   })
   it('单向轴在边界截断，减少不制造喜悦或负愤怒', () => {
     const t = setup(':memory:', { initialTraits: { reactivity: 100 } })
-    expect(t.emotion(t.add(), 'conflict', 'positive', 'slight').actualChanges.anger).toBeCloseTo(3)
-    const result = t.emotion(t.add(), 'conflict', 'negative', 'moderate')
+    expect(t.emotion(t.add(), 'conflict', 'present', 'slight').actualChanges.anger).toBeCloseTo(3)
+    const result = t.emotion(t.add(), 'conflict', 'relieved', 'moderate')
     expect(result.actualChanges.anger).toBeCloseTo(-3)
     expect(result.state.emotions.anger).toBe(0)
     expect(result.state.emotions.valence).toBe(0)
+  })
+  it.each(['conflict', 'obstruction', 'threat', 'unexpectedness'] as const)('%s 在数据层也拒绝好坏正负标注；拒绝不占用事件和额度', feature => {
+    const t = setup()
+    const event = t.add()
+    for (const direction of ['positive', 'negative'] as const) {
+      const rejected = t.emotion(event, feature, direction, 'moderate')
+      expect(rejected.status).toBe('rejected')
+      expect(rejected.reason).toContain('present')
+      expect(t.store.snapshot().version).toBe(0)
+      expect(t.store.history().items).toEqual([])
+    }
+    const present = t.emotion(event, feature, 'present', 'moderate')
+    expect(present.status).toBe('applied')
+    expect(Object.values(present.actualChanges).every(n => n! > 0)).toBe(true)
+    const relief = t.emotion(t.add(), feature, 'relieved', 'moderate')
+    expect(relief.status).toBe('applied')
+    expect(Object.values(relief.actualChanges).every(n => n! < 0)).toBe(true)
+  })
+  it('旧版正负事件在撤销重算中保持原解释，不擅自翻转历史', () => {
+    const t = setup()
+    t.emotion(t.add('first'), 'conflict', 'present', 'moderate')
+    const first = t.store.history().items[0]!
+    t.emotion(t.add('second'), 'conflict', 'present', 'moderate')
+    t.emotion(t.add('repair'), 'conflict', 'relieved', 'slight')
+    const rows = t.store.db.prepare("SELECT id,payload FROM commands WHERE kind='emotion'").all() as { id: number; payload: string }[]
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload)
+      for (const f of payload.input.features) f.direction = f.direction === 'present' ? 'positive' : 'negative'
+      t.store.db.prepare('UPDATE commands SET payload=? WHERE id=?').run(JSON.stringify(payload), row.id)
+    }
+    expect(t.store.snapshot().emotions.anger).toBe(8)
+    expect(t.store.invalidateEvent(first.id, t.store.snapshot().version).state.emotions.anger).toBe(3)
   })
   it('性格必须有三项独立依据，同一组依据不能反复领取变化', () => {
     const t = setup()
@@ -117,7 +151,7 @@ describe('持久化与可信变化', () => {
     let time = 0
     const a = new MoodStore(path, { now: () => time }); opened.push(a)
     a.addEvidence({ id: 'e', sessionId: 's', kind: 'user', at: time, text: '冲突' })
-    a.applyEmotion({ event_id: 'e', features: [{ feature_id: 'conflict', direction: 'positive', intensity: 'intense', reason: '冲突', evidence: ['e'] }] }, { sessionId: 's', callId: '1' })
+    a.applyEmotion({ event_id: 'e', features: [{ feature_id: 'conflict', direction: 'present', intensity: 'intense', reason: '冲突', evidence: ['e'] }] }, { sessionId: 's', callId: '1' })
     time = 7_200_000
     a.close()
     const b = new MoodStore(path, { now: () => time, dynamics: { halfLivesMs: { anger: 3_600_000 } } }); opened.push(b)
@@ -153,7 +187,7 @@ describe('持久化与可信变化', () => {
     t.advance(10)
     t.store.setTraits({ social_pref: -80 }, t.store.snapshot().version)
     const result = t.emotion(event, 'interaction', 'positive', 'moderate')
-    expect(result.actualChanges.valence).toBeCloseTo(4)
+    expect(result.actualChanges.valence).toBeCloseTo(6)
     expect(result.state.traits.social_pref).toBe(-80)
     expect(result.state.emotions.valence).toBeGreaterThan(3.9)
   })
@@ -185,5 +219,56 @@ describe('持久化与可信变化', () => {
     writeFileSync(path, 'broken data')
     expect(() => new MoodStore(path)).toThrow()
     expect(readFileSync(path, 'utf8')).toBe('broken data')
+  })
+  it('升级基础反应不造成跳变；缺版本的旧配置和旧事件仍按旧公式回放', () => {
+    const path = file()
+    let time = 0
+    const old = new MoodStore(path, { now: () => time, dynamics: { reactionVersion: 1 } }); opened.push(old)
+    const legacy = structuredClone(DEFAULT_DYNAMICS) as Partial<typeof DEFAULT_DYNAMICS>
+    delete legacy.reactionVersion
+    for (const row of Object.values(legacy.weights!)) for (const w of Object.values(row)) if (w) delete w.offset
+    legacy.weights!.affinity = {} // A historical sparse row must stay sparse.
+    old.db.prepare('INSERT INTO configs VALUES (?,?)').run('v1-real-legacy', JSON.stringify(legacy))
+    for (const key of ['state', 'origin']) {
+      const row = old.db.prepare('SELECT value FROM meta WHERE key=?').get(key) as { value: string }
+      const state = JSON.parse(row.value); state.configVersion = 'v1-real-legacy'
+      old.db.prepare('UPDATE meta SET value=? WHERE key=?').run(JSON.stringify(state), key)
+    }
+    old.setTraits({ social_pref: 80 }, 0)
+    old.addEvidence({ id: 'old-event', sessionId: 's', kind: 'user', at: time, text: '旧互动' })
+    const event = { features: [{ feature_id: 'interaction', direction: 'positive', intensity: 'moderate', reason: '互动', evidence: ['old-event'] }], event_id: 'old-event' }
+    expect(old.applyEmotion(event, { sessionId: 's', callId: 'old' }).actualChanges).toEqual({ valence: 4 })
+    const oldId = old.history().items[0]!.id
+    time = 3_600_000
+    const before = old.snapshot(); old.close()
+    const upgraded = new MoodStore(path, { now: () => time }); opened.push(upgraded)
+    expect(upgraded.snapshot().emotions).toEqual(before.emotions)
+    expect(upgraded.snapshot().configVersion).toMatch(/^v2-/)
+    upgraded.addEvidence({ id: 'new-event', sessionId: 's', kind: 'user', at: time, text: '新互动' })
+    const next = upgraded.applyEmotion({ ...event, event_id: 'new-event', features: [{ ...event.features[0], evidence: ['new-event'] }] }, { sessionId: 's', callId: 'new' })
+    expect(next.actualChanges.valence).toBeCloseTo(6)
+    expect(next.actualChanges.affinity).toBeCloseTo(3.5)
+    expect(upgraded.invalidateEvent(oldId, upgraded.snapshot().version).state.emotions.valence).toBeCloseTo(6)
+  })
+  it('无变化返回真实原因：none、映射抵消、小时额度与边界，不宣称已产生变化', () => {
+    const t = setup()
+    const none = t.emotion(t.add(), 'conflict', 'present', 'none')
+    expect(none.status).toBe('unchanged'); expect(none.reason).toContain('none')
+    expect(t.store.history().items[0]!.effectSummary).toBe(none.reason)
+    const relief = t.emotion(t.add(), 'threat', 'relieved')
+    expect(relief.reason).toContain('量程边界')
+    for (let i = 0; i < 4; i++) t.emotion(t.add())
+    expect(t.emotion(t.add()).reason).toContain('一小时滚动额度')
+    const legacy = setup(':memory:', { reactionVersion: 1 })
+    expect(legacy.emotion(legacy.add(), 'interaction').reason).toContain('净反应为 0')
+  })
+  it('撤销后的依据不能再用于新性格变化', () => {
+    const t = setup()
+    const id = t.add(); t.emotion(id)
+    t.store.invalidateEvent(t.store.history().items[0]!.id, t.store.snapshot().version)
+    const before = t.store.snapshot().version
+    const response = t.trait([id, t.add(), t.add()])
+    expect(response.status).toBe('rejected'); expect(response.reason).toContain('已撤销')
+    expect(t.store.snapshot().version).toBe(before)
   })
 })

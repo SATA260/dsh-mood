@@ -1,8 +1,9 @@
 import { EMOTION_IDS, FEATURE_IDS, INTENSITIES, TRAIT_IDS } from '../shared/types.js'
 import type { EmotionId, Emotions, FeatureId, Intensity, TraitId, Traits } from '../shared/types.js'
 
-export interface FeatureWeight { amount: number; trait?: TraitId }
+export interface FeatureWeight { amount: number; trait?: TraitId; offset?: number }
 export interface DynamicsConfig {
+  reactionVersion: 1 | 2
   initialTraits: Traits
   emotionLevels: Record<Intensity, number>
   traitLevels: Record<Intensity, number>
@@ -22,6 +23,7 @@ export interface DynamicsConfig {
 }
 
 export const DEFAULT_DYNAMICS: DynamicsConfig = {
+  reactionVersion: 2,
   initialTraits: { social_pref: 0, explore_pref: 0, stance_firm: 0, intimacy_pref: 0, outcome_expect: 0, reactivity: 0, recovery: 0 },
   emotionLevels: { none: 0, slight: 0.2, moderate: 0.5, intense: 1 },
   traitLevels: { none: 0, slight: 0.1, moderate: 0.25, intense: 0.5 },
@@ -38,8 +40,8 @@ export const DEFAULT_DYNAMICS: DynamicsConfig = {
   traitPerDay: 3,
   minTraitEvidence: 3,
   weights: {
-    valence: { outcome: { amount: 1 }, interaction: { amount: 1, trait: 'social_pref' }, novelty: { amount: 1, trait: 'explore_pref' }, closeness: { amount: 1, trait: 'intimacy_pref' } },
-    affinity: { outcome: { amount: 0.3 }, interaction: { amount: 0.5, trait: 'social_pref' }, novelty: { amount: 0.5, trait: 'explore_pref' }, closeness: { amount: 1, trait: 'intimacy_pref' } },
+    valence: { outcome: { amount: 1 }, interaction: { amount: 1, trait: 'social_pref', offset: 0.4 }, novelty: { amount: 1, trait: 'explore_pref', offset: 0.2 }, closeness: { amount: 1, trait: 'intimacy_pref', offset: 0.5 } },
+    affinity: { outcome: { amount: 0.3 }, interaction: { amount: 0.5, trait: 'social_pref', offset: 0.6 }, novelty: { amount: 0.5, trait: 'explore_pref', offset: 0.2 }, closeness: { amount: 1, trait: 'intimacy_pref', offset: 0.5 } },
     anger: { conflict: { amount: 1 }, obstruction: { amount: 0.5 } },
     fear: { threat: { amount: 1 } },
     surprise: { unexpectedness: { amount: 1 } },
@@ -52,8 +54,17 @@ function object(value: unknown, label: string): Record<string, unknown> {
 }
 
 /** 配置只接受已声明字段；与默认值深合并后再验证所有数值。 */
-export function resolveDynamics(input: unknown = {}): DynamicsConfig {
+export function resolveDynamics(input: unknown = {}): DynamicsConfig { return readDynamics(input, false) }
+
+/** Persisted configs are complete snapshots. Never merge newer weight defaults into history. */
+export function restoreDynamics(input: unknown): DynamicsConfig { return readDynamics(input, true) }
+
+function readDynamics(input: unknown, stored: boolean): DynamicsConfig {
   const result: DynamicsConfig = structuredClone(DEFAULT_DYNAMICS)
+  if (stored) {
+    result.reactionVersion = 1 // Pre-0.1.4 configurations predate the version field.
+    result.weights = Object.fromEntries(EMOTION_IDS.map(id => [id, {}])) as DynamicsConfig['weights']
+  }
   const root = object(input, 'dynamics')
   for (const [key, value] of Object.entries(root)) {
     if (!Object.hasOwn(result, key)) throw new TypeError(`未知的 dynamics 配置：${key}`)
@@ -65,10 +76,11 @@ export function resolveDynamics(input: unknown = {}): DynamicsConfig {
         for (const [feature, rule] of Object.entries(row)) {
           if (!(FEATURE_IDS as readonly string[]).includes(feature)) throw new TypeError(`未知事件特征：${feature}`)
           const w = object(rule, feature)
-          if (Object.keys(w).some(k => !['amount', 'trait'].includes(k))) throw new TypeError('权重包含未知字段')
+          if (Object.keys(w).some(k => !['amount', 'trait', 'offset'].includes(k))) throw new TypeError('权重包含未知字段')
           if (typeof w.amount !== 'number' || !Number.isFinite(w.amount)) throw new TypeError('权重必须是有限数字')
           if (w.trait !== undefined && !(TRAIT_IDS as readonly unknown[]).includes(w.trait)) throw new TypeError('权重引用了未知性格')
-          result.weights[axis as EmotionId][feature as FeatureId] = w.trait === undefined ? { amount: w.amount } : { amount: w.amount, trait: w.trait as TraitId }
+          if (w.offset !== undefined && (w.trait === undefined || typeof w.offset !== 'number' || !Number.isFinite(w.offset) || Math.abs(w.offset) > 1)) throw new TypeError('offset 必须与性格权重一起使用，且为 -1～1 的有限数')
+          result.weights[axis as EmotionId][feature as FeatureId] = { amount: w.amount, ...(w.trait === undefined ? {} : { trait: w.trait as TraitId }), ...(w.offset === undefined ? {} : { offset: w.offset as number }) }
         }
       }
     } else if (typeof result[key as keyof DynamicsConfig] === 'object') {
@@ -84,6 +96,7 @@ export function resolveDynamics(input: unknown = {}): DynamicsConfig {
   const finite = (v: unknown, key: string, min: number, max = Number.MAX_VALUE): void => {
     if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) throw new TypeError(`${key} 超出允许范围`)
   }
+  if (result.reactionVersion !== 1 && result.reactionVersion !== 2) throw new TypeError('reactionVersion 只允许 1 或 2')
   for (const id of TRAIT_IDS) finite(result.initialTraits[id], id, -100, 100)
   for (const id of EMOTION_IDS) {
     finite(result.sensitivity[id], `sensitivity.${id}`, 0)
@@ -101,7 +114,7 @@ export function resolveDynamics(input: unknown = {}): DynamicsConfig {
   if (!Number.isInteger(result.minTraitEvidence)) throw new TypeError('minTraitEvidence 必须是整数')
   if (result.gainMin > result.gainMax) throw new TypeError('gainMin 不能大于 gainMax')
   for (const id of EMOTION_IDS) {
-    const maxWeight = Object.values(result.weights[id]).reduce((sum, rule) => sum + Math.abs(rule?.amount ?? 0), 0)
+    const maxWeight = Object.values(result.weights[id]).reduce((sum, rule) => sum + Math.abs(rule?.amount ?? 0) * (1 + Math.abs(rule?.offset ?? 0)), 0)
     for (const value of [maxWeight, result.halfLivesMs[id] * 2, result.sensitivity[id] * 100, result.optimism[id] * 100]) {
       if (!Number.isFinite(value)) throw new TypeError(`${id} 配置会导致数值溢出`)
     }

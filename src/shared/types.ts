@@ -1,6 +1,8 @@
 export const TRAIT_IDS = ['social_pref', 'explore_pref', 'stance_firm', 'intimacy_pref', 'outcome_expect', 'reactivity', 'recovery'] as const
 export const EMOTION_IDS = ['valence', 'affinity', 'anger', 'fear', 'surprise'] as const
-export const FEATURE_IDS = ['outcome', 'interaction', 'novelty', 'closeness', 'obstruction', 'conflict', 'threat', 'unexpectedness'] as const
+export const BIPOLAR_FEATURE_IDS = ['outcome', 'interaction', 'novelty', 'closeness'] as const
+export const PRESENCE_FEATURE_IDS = ['obstruction', 'conflict', 'threat', 'unexpectedness'] as const
+export const FEATURE_IDS = [...BIPOLAR_FEATURE_IDS, ...PRESENCE_FEATURE_IDS] as const
 export const INTENSITIES = ['none', 'slight', 'moderate', 'intense'] as const
 
 export type TraitId = typeof TRAIT_IDS[number]
@@ -8,6 +10,7 @@ export type EmotionId = typeof EMOTION_IDS[number]
 export type FeatureId = typeof FEATURE_IDS[number]
 export type Intensity = typeof INTENSITIES[number]
 export type Direction = 'positive' | 'negative'
+export type PresenceDirection = 'present' | 'relieved'
 export type Traits = Record<TraitId, number>
 export type Emotions = Record<EmotionId, number>
 export type Features = Record<FeatureId, number>
@@ -60,7 +63,8 @@ export interface StateSnapshot {
 
 export interface EmotionFeature {
   feature_id: FeatureId
-  direction: Direction
+  /** New condition inputs use present/relieved; positive/negative remains readable in stored history. */
+  direction: Direction | PresenceDirection
   intensity: Intensity
   reason: string
   evidence: string[]
@@ -112,6 +116,7 @@ export interface HistoryEntry {
   needsReview: boolean
   actualChanges: Partial<Record<ParameterId, number>>
   limited: string[]
+  effectSummary?: string
 }
 
 export interface PromptSnapshot {
@@ -124,6 +129,7 @@ export interface PromptSnapshot {
 }
 
 export interface HistoryPage { items: HistoryEntry[]; nextCursor?: number }
+export interface StickerAsset { dataUrl: string }
 export interface TraitEdit { patch: Partial<Traits>; expectedVersion: number }
 export interface EventInvalidation { eventId: number; expectedVersion: number; reason?: string }
 

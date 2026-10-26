@@ -1,0 +1,9 @@
+{
+  "plugin": "0.1.4",
+  "sourceReactionVersion": 1,
+  "targetReactionVersion": 2,
+  "traitsPreserved": true,
+  "upgradeEmotionalJump": 0,
+  "versionAdvancedBy": 1,
+  "oldEventsUntouched": true
+}

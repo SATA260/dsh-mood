@@ -1,4 +1,4 @@
-import { FEATURE_IDS, INTENSITIES, TRAIT_IDS } from '../shared/types.js'
+import { FEATURE_IDS, INTENSITIES, PRESENCE_FEATURE_IDS, TRAIT_IDS } from '../shared/types.js'
 import type { EmotionInput, TraitInput, Traits } from '../shared/types.js'
 
 export class InputError extends Error {
@@ -43,10 +43,18 @@ export function parseEmotion(input: unknown): EmotionInput {
     const f = record(item, '事件特征')
     keys(f, ['feature_id', 'direction', 'intensity', 'reason', 'evidence'])
     if (!(FEATURE_IDS as readonly unknown[]).includes(f.feature_id)) throw new InputError('未知事件特征')
-    return { feature_id: f.feature_id as typeof FEATURE_IDS[number], direction: direction(f.direction), intensity: intensity(f.intensity), reason: text(f.reason, '原因'), evidence: evidence(f.evidence) }
+    const feature_id = f.feature_id as typeof FEATURE_IDS[number]
+    const condition = (PRESENCE_FEATURE_IDS as readonly string[]).includes(feature_id)
+    const eventDirection = condition ? presenceDirection(f.direction, feature_id) : direction(f.direction)
+    return { feature_id, direction: eventDirection, intensity: intensity(f.intensity), reason: text(f.reason, '原因'), evidence: evidence(f.evidence) }
   })
   if (new Set(features.map(f => f.feature_id)).size !== features.length) throw new InputError('同一事件不能重复提交同一特征')
   return { event_id: text(root.event_id, '事件 ID'), features }
+}
+
+function presenceDirection(input: unknown, feature: string): 'present' | 'relieved' {
+  if (input !== 'present' && input !== 'relieved') throw new InputError(`${feature} 必须用 present（发生／加重）或 relieved（缓解／解除）；不能用 positive/negative 表示好坏。请按事实重新标注。`)
+  return input
 }
 
 export function parseTrait(input: unknown): TraitInput {

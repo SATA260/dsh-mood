@@ -119,3 +119,35 @@ test('panel remains usable in a narrow viewport and inherits the Host dark theme
   expect(overflow).toBeLessThanOrEqual(1)
   await page.screenshot({ path: 'docs/验收/窄屏面板.png', fullPage: true })
 })
+
+test('neutral personality reacts across all five emotions, shows fractions and explains unchanged events', async ({ page }) => {
+  await open(page); await panel(page)
+  for (const name of ['社交取向', '探索取向', '立场坚持', '亲密距离', '结果预期', '敏感度', '恢复能力']) {
+    await setSlider(page, name, 0)
+  }
+  await page.getByRole('button', { name: '保存性格' }).click()
+  await expect(page.locator('.mood-notice')).toContainText('已保存')
+  const cases = [
+    ['neutral-happy', '悲喜', 0.8, '0.8'], ['neutral-like', '好恶', 1, '1'],
+    ['neutral-sad', '悲喜', -2, ''], ['neutral-anger', '愤怒', 2, ''],
+    ['neutral-fear', '恐惧／焦虑', 2, ''], ['neutral-surprise', '惊讶', 2, ''],
+  ] as const
+  for (const [scenario, name, expected, displayed] of cases) {
+    const before = Number(await page.getByRole('meter', { name, exact: true }).getAttribute('aria-valuenow'))
+    await page.getByRole('button', { name: '返回对话' }).click()
+    await newChat(page)
+    await send(page, scenario)
+    await expect(page.getByText('收到，我们继续。', { exact: true })).toBeVisible()
+    await panel(page)
+    const latest = page.locator('.mood-history-item').first()
+    await expect(latest).toContainText(scenario)
+    const after = Number(await page.getByRole('meter', { name, exact: true }).getAttribute('aria-valuenow'))
+    expect(after - before).toBeCloseTo(expected, 1)
+    if (displayed) await expect(page.getByLabel(`${name}值`, { exact: true })).toContainText(displayed)
+  }
+  await page.getByRole('button', { name: '返回对话' }).click()
+  await newChat(page); await send(page, 'neutral-none')
+  await expect(page.getByText('收到，我们继续。', { exact: true })).toBeVisible()
+  await panel(page)
+  await expect(page.locator('.mood-history-item').first()).toContainText('数值未变化：所有特征的程度均为 none')
+})

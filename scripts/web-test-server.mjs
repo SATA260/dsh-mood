@@ -23,7 +23,8 @@ async function run(args) {
 }
 try {
   await run(['web', '--help'])
-  await run(['plugin', '--profile', 'web', 'add', resolve('dist/dsh-mood-0.1.0.tgz')])
+  const pluginManifest = JSON.parse(await readFile('package.json', 'utf8'))
+  await run(['plugin', '--profile', 'web', 'add', resolve(`dist/dsh-mood-${pluginManifest.version}.tgz`)])
   const patch = join(home, 'keyless.patch.yml')
   await writeFile(patch, `- id: agent-default-model\n  config:\n    provider: mood-test\n    model: mood-test\n- id: tools\n  config:\n    mode: native\n- id: session-title-llm\n  disabled: true\n- insert:\n    - id: mood-test-provider\n      name: ${JSON.stringify(resolve('tests/fixtures/keyless-provider.mjs'))}\n`)
   child = spawn(process.execPath, [bin, 'web', '--patch', patch, '--no-open', '--port', port], { env, stdio: ['ignore', 'pipe', 'pipe'] })

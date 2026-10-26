@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConversationNodeDefinition, ConversationMatch } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeViewProps, ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -28,12 +28,20 @@ export const stickerDefinition: ConversationNodeDefinition<StickerData | null> =
     return { key: context.key, kind: 'dsh-mood-sticker', id: context.id, target: 'chat', data: value, anchorSeq: value.seq + .001, location: context.start.location, visibility: 'visible', groupTree: 'turn' }
   },
 }
-export function StickerImage({ id, name }: { id: string; name: string }) {
+export type StickerLoader = (id: string) => Promise<string | null>
+export function StickerImage({ id, name, loadUrl }: { id: string; name: string; loadUrl?: StickerLoader }) {
   const [failed, setFailed] = useState(false)
-  const url = stickerUrl(id)
+  const [loadedUrl, setLoadedUrl] = useState<string>()
+  useEffect(() => {
+    if (!loadUrl) return
+    let active = true
+    void loadUrl(id).then(url => { if (active && url) setLoadedUrl(url) }).catch(() => { if (active) setFailed(true) })
+    return () => { active = false }
+  }, [id, loadUrl])
+  const url = loadUrl ? loadedUrl : stickerUrl(id)
   return url && !failed ? <img className="mood-sticker" src={url} alt={`DeepSeek：${name}`} loading="lazy" onError={() => setFailed(true)} /> : null
 }
-export function registerStickers(ctx: Context): void {
+export function registerStickers(ctx: Context, loadUrl?: StickerLoader): void {
   ctx.effect(() => ctx.uiConversation.events.register(stickerDefinition))
-  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({ name: 'conversation.chat.node', key: 'dsh-mood-sticker', locale: 'chat' }, ({ node }: ChatNodeViewProps<'dsh-mood-sticker'>) => <StickerImage key={node.data.id} id={node.data.id} name={node.data.name} />))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({ name: 'conversation.chat.node', key: 'dsh-mood-sticker', locale: 'chat' }, ({ node }: ChatNodeViewProps<'dsh-mood-sticker'>) => <StickerImage key={node.data.id} id={node.data.id} name={node.data.name} loadUrl={loadUrl} />))
 }

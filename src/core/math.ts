@@ -23,7 +23,9 @@ export function decay(emotions: Emotions, traits: Traits, elapsedMs: number, con
 
 export function eventVector(features: readonly EmotionFeature[], config: DynamicsConfig): Features {
   const vector: Features = { outcome: 0, interaction: 0, novelty: 0, closeness: 0, obstruction: 0, conflict: 0, threat: 0, unexpectedness: 0 }
-  for (const f of features) vector[f.feature_id] = (f.direction === 'positive' ? 1 : -1) * config.emotionLevels[f.intensity]
+  // Legacy positive/negative entries retain their original meaning during replay.
+  // New condition inputs are validated as present/relieved before reaching here.
+  for (const f of features) vector[f.feature_id] = (f.direction === 'positive' || f.direction === 'present' ? 1 : -1) * config.emotionLevels[f.intensity]
   return vector
 }
 
@@ -34,7 +36,8 @@ export function emotionReaction(traits: Traits, features: readonly EmotionFeatur
     let q = 0
     for (const [feature, weight] of Object.entries(config.weights[id])) {
       if (!weight) continue
-      q += vector[feature as keyof Features] * weight.amount * (weight.trait ? traits[weight.trait] / 100 : 1)
+      const preference = weight.trait ? traits[weight.trait] / 100 + (config.reactionVersion >= 2 ? weight.offset ?? 0 : 0) : 1
+      q += vector[feature as keyof Features] * weight.amount * preference
     }
     q = clamp(q, -1, 1)
     const gain = clamp(1 + config.sensitivity[id] * traits.reactivity / 100 + config.optimism[id] * traits.outcome_expect / 100 * Math.sign(q), config.gainMin, config.gainMax)

@@ -17,7 +17,7 @@ it('four independent Host workers commit 40 simultaneous events without losing s
     for (let i=0;i<10;i++) {
       const id = workerData.id+':'+i;
       store.addEvidence({id,sessionId:workerData.id,kind:'user',at:1000,text:'独立真实事件'});
-      const result=store.applyEmotion({event_id:id,features:[{feature_id:'conflict',direction:'positive',intensity:'slight',reason:'冲突',evidence:[id]}]},{sessionId:workerData.id,callId:id});
+      const result=store.applyEmotion({event_id:id,features:[{feature_id:'conflict',direction:'present',intensity:'slight',reason:'冲突',evidence:[id]}]},{sessionId:workerData.id,callId:id});
       if(result.status==='rejected') throw new Error(result.reason);
     }
     store.close(); parentPort.postMessage('done');

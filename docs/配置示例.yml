@@ -2,6 +2,7 @@
 - id: dsh-mood
   config:
     dynamics:
+      reactionVersion: 2 # 中性性格保留基础事件响应；旧记录仍使用旧规则。
       initialTraits:
         social_pref: 0
         explore_pref: 0

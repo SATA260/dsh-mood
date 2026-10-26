@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 import type { RemoteResult, RemoteStreamHandle, TypertRemoteMethodSpec } from '@deepseek-ai/dsh-typert-protocol'
 import { EMOTION_IDS, TRAIT_IDS } from './shared/types.js'
-import type { EventInvalidation, HistoryPage, MutationResult, PromptSnapshot, StateSnapshot, TraitEdit } from './shared/types.js'
+import type { EventInvalidation, HistoryPage, MutationResult, PromptSnapshot, StateSnapshot, StickerAsset, TraitEdit } from './shared/types.js'
 
 const finite = z.number().finite()
 const trait = finite.min(-100).max(100)
@@ -16,7 +16,7 @@ const definition = z.object({ id: z.enum([...TRAIT_IDS, ...EMOTION_IDS]), name: 
 export const stateSchema: z.ZodType<StateSnapshot> = z.object({ roleId: z.string(), version, at: finite, traits, emotions, baseline: emotions, halfLivesMs: halfLives, definitions: z.array(definition), configVersion: z.string() })
 const changes = z.partialRecord(z.enum([...TRAIT_IDS, ...EMOTION_IDS]), finite)
 const mutation: z.ZodType<MutationResult> = z.object({ status: z.enum(['applied', 'unchanged', 'rejected']), actualChanges: changes, state: stateSchema, reason: z.string(), limited: z.array(z.string()), replayed: z.boolean().optional() })
-const history: z.ZodType<HistoryPage> = z.object({ items: z.array(z.object({ id: z.number().int().positive(), kind: z.enum(['emotion', 'personality', 'manual', 'configuration']), at: finite, committedAt: finite, reason: z.string(), evidenceIds: z.array(z.string()), sourceId: z.string().optional(), valid: z.boolean(), needsReview: z.boolean(), actualChanges: changes, limited: z.array(z.string()) })), nextCursor: z.number().int().positive().optional() })
+const history: z.ZodType<HistoryPage> = z.object({ items: z.array(z.object({ id: z.number().int().positive(), kind: z.enum(['emotion', 'personality', 'manual', 'configuration']), at: finite, committedAt: finite, reason: z.string(), evidenceIds: z.array(z.string()), sourceId: z.string().optional(), valid: z.boolean(), needsReview: z.boolean(), actualChanges: changes, limited: z.array(z.string()), effectSummary: z.string().optional() })), nextCursor: z.number().int().positive().optional() })
 const snapshot: z.ZodType<PromptSnapshot | null> = z.object({ sessionId: z.string(), turn: version, at: finite, state: stateSchema, text: z.string(), templateVersion: version }).nullable()
 const codec = (name: string, schema: z.ZodType) => ({ mode: 'strict' as const, typeSymbol: `dsh-mood#${name}`, create: () => schema })
 function method(name: string, result: z.ZodType, request?: z.ZodType): TypertRemoteMethodSpec {
@@ -30,6 +30,7 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({ package: 'dsh-mood', metho
   'mood/invalidateEvent': method('invalidateEvent', mutation, z.object({ eventId: z.number().int().positive(), expectedVersion: version, reason: z.string().max(2000).optional() }).strict()),
   'mood/getPromptSnapshot': method('getPromptSnapshot', snapshot, z.object({ sessionId: z.string().min(1), turn: version.optional() }).strict()),
   'mood/watchState': { ...method('watchState', stateSchema), mode: 'stream', cancellation: { parameter: 'signal' } },
+  'moodStickers/getImage': { ...method('getStickerImage', z.object({ dataUrl: z.string().startsWith('data:image/jpeg;base64,') }).nullable(), z.object({ id: z.string().min(1).max(64) }).strict()), service: 'moodStickers' },
 } }, z)
 
 export interface MoodRemote {
@@ -40,5 +41,6 @@ export interface MoodRemote {
   getPromptSnapshot(request: { sessionId: string; turn?: number }): Promise<RemoteResult<PromptSnapshot | null>>
   watchState(): RemoteStreamHandle<StateSnapshot, never>
 }
-declare module '@deepseek-ai/dsh-typert-protocol' { interface TypertRemoteNamespaceMap { mood: MoodRemote } }
+export interface StickerRemote { getImage(request: { id: string }): Promise<RemoteResult<StickerAsset | null>> }
+declare module '@deepseek-ai/dsh-typert-protocol' { interface TypertRemoteNamespaceMap { mood: MoodRemote; moodStickers: StickerRemote } }
 export default TYPERT_REMOTE
