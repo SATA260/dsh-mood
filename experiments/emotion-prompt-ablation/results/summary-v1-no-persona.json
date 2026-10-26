@@ -1,0 +1,108 @@
+{
+  "n_records": 140,
+  "pair_rates": {
+    "c1_85_vs_c0": {
+      "n": 5,
+      "left_wins": 5,
+      "right_wins": 0,
+      "ties": 5,
+      "left_rate": 1.0
+    },
+    "c2_high_vs_c0": {
+      "n": 8,
+      "left_wins": 6,
+      "right_wins": 2,
+      "ties": 2,
+      "left_rate": 0.75
+    },
+    "cross_20_vs_85": {
+      "n": 5,
+      "left_wins": 4,
+      "right_wins": 1,
+      "ties": 5,
+      "left_rate": 0.8
+    },
+    "within_70_80": {
+      "n": 0,
+      "left_wins": 0,
+      "right_wins": 0,
+      "ties": 0,
+      "left_rate": null
+    },
+    "within_80_90": {
+      "n": 0,
+      "left_wins": 0,
+      "right_wins": 0,
+      "ties": 0,
+      "left_rate": null
+    },
+    "within_70_90": {
+      "n": 0,
+      "left_wins": 0,
+      "right_wins": 0,
+      "ties": 0,
+      "left_rate": null
+    },
+    "bound_66_vs_67": {
+      "n": 0,
+      "left_wins": 0,
+      "right_wins": 0,
+      "ties": 0,
+      "left_rate": null
+    },
+    "within_708090": {
+      "n": 0,
+      "left_wins": 0,
+      "right_wins": 0,
+      "ties": 0,
+      "left_rate": null
+    }
+  },
+  "c1_accuracy": {
+    "n": 30,
+    "correct": 10,
+    "accuracy": 0.3333333333333333
+  },
+  "c2_accuracy": {
+    "n": 30,
+    "correct": 10,
+    "accuracy": 0.3333333333333333
+  },
+  "leak": {
+    "c1": 0.0,
+    "c2": 0.03333333333333333
+  },
+  "fact": {
+    "C0": 1.0,
+    "C1-85": 0.8,
+    "C2-非常开心": 0.7,
+    "gap": 0.30000000000000004
+  },
+  "verdicts": {
+    "q1_percent_affects": "成立",
+    "q2_percent_fine_tune": "不明显",
+    "q3_label_clearer": "都不够",
+    "fact_invariance": "被破坏"
+  },
+  "source": "lexicon",
+  "bands": [
+    {
+      "lo": 1,
+      "hi": 33,
+      "label": "有点开心",
+      "anchor": 20
+    },
+    {
+      "lo": 34,
+      "hi": 66,
+      "label": "一般开心",
+      "anchor": 50
+    },
+    {
+      "lo": 67,
+      "hi": 100,
+      "label": "非常开心",
+      "anchor": 85
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "probes": [
+    {
+      "id": "chat",
+      "family": "affect",
+      "title": "闲聊",
+      "text": "今天过得怎么样？随便聊聊就行。"
+    },
+    {
+      "id": "vent",
+      "family": "affect",
+      "title": "倾诉",
+      "text": "我工作搞砸了，现在好烦，你说两句。"
+    },
+    {
+      "id": "fact",
+      "family": "fact",
+      "title": "事实",
+      "text": "真空中的光速大约是多少？只回答数量级和单位，一句即可。"
+    },
+    {
+      "id": "bug",
+      "family": "fact",
+      "title": "受挫求助",
+      "text": "这段代码为什么报错？你怎么看？\n\ndef greet(name)\n    print(\"hello\", name)\n"
+    }
+  ]
+}

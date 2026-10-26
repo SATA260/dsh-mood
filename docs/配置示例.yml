@@ -1,0 +1,33 @@
+# 合并到目标 profile 的 cordis.patch.yml；不要覆盖已有 patch。
+- id: dsh-mood
+  config:
+    dynamics:
+      initialTraits:
+        social_pref: 0
+        explore_pref: 0
+        stance_firm: 0
+        intimacy_pref: 0
+        outcome_expect: 0
+        reactivity: 0
+        recovery: 0
+      emotionLevels:
+        none: 0
+        slight: 0.2
+        moderate: 0.5
+        intense: 1
+      traitLevels:
+        none: 0
+        slight: 0.1
+        moderate: 0.25
+        intense: 0.5
+      halfLivesMs:
+        valence: 14400000
+        affinity: 21600000
+        anger: 7200000
+        fear: 7200000
+        surprise: 300000
+      emotionPerEvent: 15
+      emotionPerHour: 40
+      traitPerEvent: 0.5
+      traitPerDay: 3
+      minTraitEvidence: 3

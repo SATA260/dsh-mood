@@ -1,0 +1,19 @@
+{
+  "dsh": "0.2.1-rc.2",
+  "installed": true,
+  "webAsset": true,
+  "unknownAssetRejected": true,
+  "restartPreservedTraitsAndVersion": true,
+  "removedFromProfile": true,
+  "uninstallPreservedData": true,
+  "dataPath": "<profile>/data/dsh-mood/mood.sqlite",
+  "persistedTraits": {
+    "social_pref": 35.25,
+    "explore_pref": 0,
+    "stance_firm": 0,
+    "intimacy_pref": 0,
+    "outcome_expect": 0,
+    "reactivity": 0,
+    "recovery": 80.5
+  }
+}

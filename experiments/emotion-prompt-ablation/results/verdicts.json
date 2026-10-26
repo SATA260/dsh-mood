@@ -1,0 +1,33 @@
+{
+  "persona": "大肥鱼",
+  "model": "deepseek-flash",
+  "date": "2026-10-26",
+  "source": "llm_judge",
+  "verdicts": {
+    "q1_percent_affects": "成立",
+    "q2_percent_fine_tune": "细调可分；边界触及抠数字门槛",
+    "q3_label_clearer": "不成立",
+    "fact_invariance": "保持"
+  },
+  "pair_rates": {
+    "c1_85_vs_c0": {"n": 10, "left_rate": 1.0},
+    "c2_high_vs_c0": {"n": 10, "left_rate": 0.9},
+    "cross_20_vs_85": {"n": 10, "left_rate": 0.8},
+    "within_708090": {"n": 29, "left_rate": 0.862},
+    "bound_66_vs_67": {"n": 10, "left_rate": 0.7}
+  },
+  "accuracy": {
+    "c1": 0.367,
+    "c2": 0.467
+  },
+  "leak": {
+    "c1": 0.0,
+    "c2": 0.0167
+  },
+  "fact": {
+    "C0": 1.0,
+    "C1-85": 1.0,
+    "C2-非常开心": 1.0,
+    "gap": 0.0
+  }
+}

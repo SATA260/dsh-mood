@@ -1,0 +1,31 @@
+{
+  "version": "v1.0",
+  "date": "2026-10-26",
+  "repository": "SATA260/dsh-mood",
+  "documents": [
+    {
+      "file": "docs/功能文档.md",
+      "issue": 1,
+      "url": "https://github.com/SATA260/dsh-mood/issues/1",
+      "title": "[PRD] 情绪、性格与表情包系统功能规范 v1.0"
+    },
+    {
+      "file": "docs/模块A-提示词管理.md",
+      "issue": 2,
+      "url": "https://github.com/SATA260/dsh-mood/issues/2",
+      "title": "[模块 A] 系统提示词管理与注入 v1.0"
+    },
+    {
+      "file": "docs/模块B-性格与情绪.md",
+      "issue": 3,
+      "url": "https://github.com/SATA260/dsh-mood/issues/3",
+      "title": "[模块 B] 性格与情绪 v1.0"
+    },
+    {
+      "file": "docs/模块C-表情包管理.md",
+      "issue": 4,
+      "url": "https://github.com/SATA260/dsh-mood/issues/4",
+      "title": "[模块 C] 表情包管理 v1.0"
+    }
+  ]
+}

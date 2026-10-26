@@ -1,0 +1,47 @@
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+
+# Dependencies and build output
+node_modules/
+.pnpm-store/
+/lib/
+/dist/
+*.tsbuildinfo
+*.tgz
+
+# Test output and caches
+coverage/
+playwright-report/
+test-results/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local configuration, credentials and runtime data
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+/work/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.log
+
+# Raw model responses; keep reproducible fixtures and aggregate reports
+experiments/emotion-prompt-ablation/results/raw/
+experiments/emotion-prompt-ablation/results/raw-v1-no-persona/
+experiments/emotion-prompt-ablation/results/judge.json

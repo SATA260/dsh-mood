@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dsh-mood · 维度拆分总览</title>
+<style>
+  :root {
+    --paper: #FAF8F3;
+    --ink: #171614;
+    --body: #4A463E;
+    --muted: #8A8478;
+    --hair: #E6E0D3;
+    --indigo: #4338CA;
+    --indigo-bg: #EEECFB;
+    --green: #15803D;
+    --green-bg: #E9F4EC;
+    --orange: #C2410C;
+    --orange-bg: #FBEEE4;
+    --amber: #B45309;
+    --amber-bg: #FBF0DE;
+    --rose: #BE123C;
+    --rose-bg: #FBE9ED;
+    --teal: #0F766E;
+    --teal-bg: #E6F3F1;
+    --violet: #6D28D9;
+    --violet-bg: #F0E9FB;
+    --blue: #1D4ED8;
+    --blue-bg: #E8EDFC;
+    --purple: #7E22CE;
+    --purple-bg: #F3EAFB;
+    --gray-bg: #F0EDE5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1680px;
+    font-family: "PingFang SC", "Helvetica Neue", "Arial", sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum";
+  }
+  .canvas {
+    position: relative;
+    width: 1680px;
+    height: 1190px;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(0,0,0,0.035) 1px, transparent 0) 0 0 / 24px 24px,
+      var(--paper);
+    overflow: hidden;
+  }
+  .wires { position: absolute; inset: 0; z-index: 0; }
+  .layer { position: absolute; z-index: 1; }
+
+  /* ---------- header ---------- */
+  .eyebrow {
+    left: 64px; top: 44px;
+    font-size: 12px; letter-spacing: 2.4px; color: var(--muted);
+    font-weight: 600;
+  }
+  h1 {
+    position: absolute; left: 64px; top: 64px; margin: 0;
+    font-size: 44px; line-height: 1.1; letter-spacing: -0.8px; font-weight: 700;
+  }
+  .sub {
+    position: absolute; left: 64px; top: 122px; margin: 0;
+    font-size: 17.5px; line-height: 1.55; color: var(--body); font-weight: 400;
+  }
+  .sub b { color: var(--ink); font-weight: 600; }
+
+  .types { right: 64px; top: 60px; width: 344px; }
+  .types .th { font-size: 10.5px; letter-spacing: 1.6px; color: var(--muted); font-weight: 600; text-align: right; margin-bottom: 4px; }
+  .types .row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; line-height: 1.95; color: var(--body); }
+  .types .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+  .types .n { font-weight: 600; width: 38px; }
+  .types .en { font-size: 9.5px; letter-spacing: .8px; color: #A39C8E; width: 64px; }
+  .types .s { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .types .fn { margin-top: 3px; text-align: right; font-size: 10.5px; color: #A39C8E; }
+
+  /* ---------- method strip ---------- */
+  .method {
+    left: 64px; top: 182px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .step {
+    display: flex; align-items: center; gap: 9px;
+    background: #fff; border: 1px solid var(--hair); border-radius: 999px;
+    padding: 7px 15px 7px 9px; font-size: 13.5px; color: var(--body);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.03);
+  }
+  .step i {
+    font-style: normal; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--ink); color: #fff; font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-arrow { color: #BDB7AA; font-size: 15px; }
+  .method-note { margin-left: 14px; font-size: 12.5px; color: var(--muted); }
+
+  /* ---------- section labels ---------- */
+  .sec {
+    display: flex; align-items: baseline; justify-content: space-between;
+    font-size: 12.5px; letter-spacing: 1.8px; color: var(--muted); font-weight: 600;
+  }
+  .sec .note { letter-spacing: 0.2px; font-weight: 400; font-size: 12px; color: #9B9488; }
+  .sec-slow { left: 64px; right: 64px; top: 254px; }
+  .sec-fast { left: 64px; right: 64px; top: 596px; }
+
+  /* ---------- slow cards ---------- */
+  .slow-row {
+    left: 64px; top: 282px;
+    display: flex; gap: 26px;
+  }
+  .slow-card {
+    width: 500px; height: 280px; border-radius: 18px;
+    padding: 20px 22px 16px; border: 1px solid;
+    display: flex; flex-direction: column;
+  }
+  .slow-card .head { display: flex; align-items: baseline; justify-content: space-between; }
+  .slow-card .name { font-size: 20px; font-weight: 700; letter-spacing: -0.2px; }
+  .slow-card .name .idx { font-size: 14px; margin-right: 5px; opacity: .7; }
+  .slow-card .time { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+  .slow-card .headline { font-size: 23px; font-weight: 700; margin-top: 8px; letter-spacing: -0.3px; }
+  .slow-card .desc { font-size: 13.5px; line-height: 1.62; color: var(--body); margin-top: 7px; }
+  .slow-card .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: auto; padding-top: 12px; }
+  .chip {
+    background: rgba(255,255,255,.82); border: 1px solid rgba(0,0,0,.07);
+    border-radius: 7px; padding: 4px 9px; font-size: 12px; color: var(--body); font-weight: 500;
+  }
+  .slow-card .foot {
+    margin-top: 11px; padding-top: 9px; border-top: 1px dashed rgba(0,0,0,.12);
+    font-size: 11.5px; color: var(--muted);
+  }
+  .trait { background: var(--indigo-bg); border-color: #D8D4F4; }
+  .trait .name, .trait .headline { color: var(--indigo); }
+  .relation { background: var(--green-bg); border-color: #CDE5D4; }
+  .relation .name, .relation .headline { color: var(--green); }
+  .content { background: var(--orange-bg); border-color: #F0D4BF; border-style: dashed; }
+  .kind { font-size: 10.5px; font-weight: 600; color: var(--orange); background: rgba(255,255,255,.75); border: 1px solid #EFD3BE; border-radius: 5px; padding: 1.5px 6px; vertical-align: 4px; margin-left: 3px; }
+  .content .name, .content .headline { color: var(--orange); }
+
+  /* ---------- pipeline ---------- */
+  .pipe {
+    left: 64px; top: 630px;
+    display: flex; gap: 26px;
+  }
+  .stage {
+    width: 237px; height: 212px; background: #fff;
+    border: 1px solid var(--hair); border-radius: 16px;
+    padding: 14px 15px 11px;
+    display: flex; flex-direction: column; position: relative;
+    box-shadow: 0 1px 2px rgba(31,26,15,0.05);
+  }
+  .stage .top { display: flex; align-items: center; gap: 9px; }
+  .stage .num {
+    width: 30px; height: 30px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11.5px; font-weight: 700; letter-spacing: .3px;
+  }
+  .stage .title { font-size: 18.5px; font-weight: 700; letter-spacing: -0.2px; }
+  .stage .en { font-size: 9.5px; letter-spacing: 1.3px; color: #A39C8E; margin-top: 5px; font-weight: 600; }
+  .stage .lines { font-size: 12.5px; line-height: 1.6; color: var(--body); margin-top: 8px; }
+  .stage .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; padding-top: 8px; }
+  .tag {
+    font-size: 10.5px; font-weight: 600; padding: 2.5px 6px; border-radius: 5px; white-space: nowrap;
+  }
+  .tag.t { background: var(--indigo-bg); color: var(--indigo); }
+  .tag.r { background: var(--green-bg); color: var(--green); }
+  .tag.c { background: var(--orange-bg); color: var(--orange); }
+  .stage .foot {
+    margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--hair);
+    font-size: 10.5px; color: var(--muted);
+  }
+  .s1 .num { background: var(--gray-bg); color: #5C564A; }
+  .s2 .num { background: var(--amber-bg); color: var(--amber); }
+  .s3 .num { background: var(--rose-bg); color: var(--rose); }
+  .s4 .num { background: var(--teal-bg); color: var(--teal); }
+  .s5 .num { background: var(--violet-bg); color: var(--violet); }
+  .s6 .num { background: var(--blue-bg); color: var(--blue); }
+  .s1 { border-top: 3px solid #B7B0A1; }
+  .s2 { border-top: 3px solid #D99A3E; }
+  .s3 { border-top: 3px solid #D45C7C; }
+  .s4 { border-top: 3px solid #4FA89E; }
+  .s5 { border-top: 3px solid #9B7BE0; }
+  .s6 { border-top: 3px solid #6E8FE8; }
+
+  /* ---------- mood ---------- */
+  .mood-label { left: 64px; top: 918px; width: 230px; }
+  .mood-label .k { font-size: 12.5px; letter-spacing: 1.8px; color: var(--muted); font-weight: 600; }
+  .mood-label .n { font-size: 20px; font-weight: 700; margin-top: 6px; color: var(--purple); }
+  .mood-label .t { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .mood-label .h { font-size: 12.5px; line-height: 1.55; color: var(--body); margin-top: 10px; }
+  .mood-band {
+    left: 327px; top: 904px; width: 1289px; height: 158px;
+    background: var(--purple-bg); border: 1px solid #E2D2F5; border-radius: 18px;
+    padding: 20px 24px; display: flex; align-items: center; gap: 24px;
+  }
+  .mood-band .txt { width: 560px; }
+  .mood-band .h { font-size: 19px; font-weight: 700; color: var(--purple); letter-spacing: -0.2px; }
+  .mood-band .d { font-size: 13px; line-height: 1.62; color: var(--body); margin-top: 7px; }
+  .mood-band .formula {
+    margin-left: auto; display: flex; flex-direction: column; gap: 7px; align-items: flex-end;
+  }
+  .mono {
+    font-family: "SF Mono", "Menlo", monospace; font-size: 12px;
+    background: rgba(255,255,255,.8); border: 1px solid #E2D2F5; border-radius: 7px;
+    padding: 5px 9px; color: #5B2A86;
+  }
+  .mono.small { font-size: 10.5px; color: #8A6BA8; }
+  .decay { width: 205px; height: 78px; }
+
+  /* ---------- footer ---------- */
+  .foot-left {
+    left: 64px; top: 1092px; width: 1050px;
+    font-size: 12.5px; color: var(--muted); line-height: 1.6;
+  }
+  .foot-left b { color: var(--body); font-weight: 600; }
+  .foot-right {
+    right: 64px; top: 1092px; text-align: right;
+    font-size: 12px; color: #A39C8E; line-height: 1.6;
+  }
+  .timebar { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .timebar .seg { height: 6px; border-radius: 3px; }
+  .timebar .lbl { font-size: 10.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <svg class="wires" width="1680" height="1190" fill="none">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#A9A294"/>
+      </marker>
+      <marker id="arP" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#9B7BD8"/>
+      </marker>
+    </defs>
+    <!-- stage arrows -->
+    <g stroke="#B9B2A4" stroke-width="1.6" marker-end="url(#ar)">
+      <path d="M 302 736 L 322 736"/>
+      <path d="M 565 736 L 585 736"/>
+      <path d="M 828 736 L 848 736"/>
+      <path d="M 1091 736 L 1111 736"/>
+      <path d="M 1354 736 L 1374 736"/>
+    </g>
+    <!-- mood feedback -->
+    <g stroke="#9B7BD8" stroke-width="1.7" stroke-dasharray="5 5" marker-end="url(#arP)">
+      <path d="M 445 900 L 445 846"/>
+      <path d="M 708 842 L 708 898"/>
+    </g>
+    <g fill="#9B7BD8" font-size="11.5" font-family="PingFang SC, sans-serif">
+      <text x="456" y="876">心情给评价上色</text>
+      <text x="720" y="876">事件累积成心境</text>
+    </g>
+  </svg>
+
+  <div class="layer eyebrow">DSH-MOOD · 维度拆分 v0.1</div>
+  <h1>一套引擎，四类变量</h1>
+  <p class="sub">性格不是和情绪并列的一张表，它是这台引擎的<b>慢参数</b>。所以先拆「变量类型」，再拆「因素」。</p>
+
+  <div class="layer types">
+    <div class="th">四类变量 · 时间尺度</div>
+    <div class="row"><span class="dot" style="background:#D99A3E"></span><span class="n">事件</span><span class="en">episode</span><span class="s">秒 ~ 分</span></div>
+    <div class="row"><span class="dot" style="background:#9B7BD8"></span><span class="n">心境</span><span class="en">mood</span><span class="s">小时 ~ 天</span></div>
+    <div class="row"><span class="dot" style="background:#4FA89E"></span><span class="n">关系</span><span class="en">relation</span><span class="s">天 ~ 月</span></div>
+    <div class="row"><span class="dot" style="background:#7D74D9"></span><span class="n">参数</span><span class="en">trait</span><span class="s">月 ~ 终生</span></div>
+    <div class="fn">内容不是变量，是评价的标准（剧本）</div>
+  </div>
+
+  <div class="layer method">
+    <div class="step"><i>1</i>按变化速度分层</div>
+    <span class="step-arrow">→</span>
+    <div class="step"><i>2</i>事件按因果链拆</div>
+    <span class="step-arrow">→</span>
+    <div class="step"><i>3</i>性格折叠成参数</div>
+    <span class="step-arrow">→</span>
+    <div class="step"><i>4</i>派生量算出来</div>
+    <span class="method-note">先决定每个因素「属于哪一类」，再决定它「设成多少」</span>
+  </div>
+
+  <!-- ============ SLOW ============ -->
+  <div class="layer sec sec-slow">
+    <span>慢变量 · 设定</span>
+    <span class="note">它们几乎不变；决定「同样刺激下，反应长什么样」</span>
+  </div>
+
+  <div class="layer slow-row">
+    <div class="slow-card trait">
+      <div class="head">
+        <div class="name">参数 trait</div>
+        <div class="time">月 ~ 终生</div>
+      </div>
+      <div class="headline">性格住在这里</div>
+      <div class="desc">它不决定「现在是什么情绪」，它决定「同样的刺激下，反应多大、多久、露多少」。</div>
+      <div class="chips">
+        <span class="chip">情绪基线</span>
+        <span class="chip">反应阈限</span>
+        <span class="chip">反应增益</span>
+        <span class="chip">恢复速度</span>
+        <span class="chip">调节偏好</span>
+        <span class="chip">表达抑制</span>
+      </div>
+      <div class="foot">每个角色一份 · 有单位，不是 0–1 的美感分</div>
+    </div>
+
+    <div class="slow-card relation">
+      <div class="head">
+        <div class="name">关系 relation</div>
+        <div class="time">天 ~ 月</div>
+      </div>
+      <div class="headline">按对象存，不按角色存</div>
+      <div class="desc">同一件事，对不同的人反应不同。全局只存一个情绪值，在多人场景里必然失效。</div>
+      <div class="chips">
+        <span class="chip">信任</span>
+        <span class="chip">权力差</span>
+        <span class="chip">亲密</span>
+        <span class="chip">态度效价</span>
+      </div>
+      <div class="foot">每个对象一份 · 它会同时改写评价与行动倾向</div>
+    </div>
+
+    <div class="slow-card content">
+      <div class="head">
+        <div class="name">内容 <span class="kind">剧本</span></div>
+        <div class="time">叙事层</div>
+      </div>
+      <div class="headline">评价的标准，不是变量</div>
+      <div class="desc">目标、价值、恐惧、底线。它们不进数值向量，是评价函数的输入和权重。</div>
+      <div class="chips">
+        <span class="chip">目标</span>
+        <span class="chip">价值观</span>
+        <span class="chip">恐惧</span>
+        <span class="chip">底线</span>
+      </div>
+      <div class="foot">它不是变量：写成剧本，不写成滑杆</div>
+    </div>
+  </div>
+
+  <!-- ============ PIPELINE ============ -->
+  <div class="layer sec sec-fast">
+    <span>快变量 · 运行时</span>
+    <span class="note">一次情绪 = 一条链 · 标签颜色：<b style="color:#4338CA">紫 参数</b> / <b style="color:#15803D">绿 关系</b> / <b style="color:#C2410C">橙 内容</b></span>
+  </div>
+
+  <div class="layer pipe">
+    <div class="stage s1">
+      <div class="top"><div class="num">01</div><div class="title">事件 / 对象</div></div>
+      <div class="en">OBJECT</div>
+      <div class="lines">谁 + 发生了什么。<br>没有对象，就只是心境，不是一次情绪。</div>
+      <div class="tags"><span class="tag">object_id</span></div>
+      <div class="foot">情绪总是「关于某个东西」的</div>
+    </div>
+
+    <div class="stage s2">
+      <div class="top"><div class="num">02</div><div class="title">评价</div></div>
+      <div class="en">APPRAISAL</div>
+      <div class="lines">目标相关性 / 一致性<br>归因 · 掌控 · 确定性<br>规范违反</div>
+      <div class="tags">
+        <span class="tag c">目标·价值</span>
+        <span class="tag r">信任</span>
+        <span class="tag t">阈限·共情</span>
+      </div>
+      <div class="foot">最该量的一层：可观测、可解释</div>
+    </div>
+
+    <div class="stage s3">
+      <div class="top"><div class="num">03</div><div class="title">核心情感</div></div>
+      <div class="en">CORE AFFECT · PAD</div>
+      <div class="lines">效价 valence<br>唤醒 arousal<br>支配 dominance</div>
+      <div class="tags">
+        <span class="tag t">基线</span>
+        <span class="tag t">增益</span>
+      </div>
+      <div class="foot">强度 = 偏离基线的模长</div>
+    </div>
+
+    <div class="stage s4">
+      <div class="top"><div class="num">04</div><div class="title">行动倾向</div></div>
+      <div class="en">ACTION TENDENCY</div>
+      <div class="lines">趋近 / 攻击<br>回避 / 冻结</div>
+      <div class="tags">
+        <span class="tag r">亲密</span>
+        <span class="tag r">权力</span>
+      </div>
+      <div class="foot">行为的直接预测器</div>
+    </div>
+
+    <div class="stage s5">
+      <div class="top"><div class="num">05</div><div class="title">调节</div></div>
+      <div class="en">REGULATION</div>
+      <div class="lines">重评 / 压抑 / 反刍<br>投入 effort → 成败 success</div>
+      <div class="tags"><span class="tag t">调节偏好</span></div>
+      <div class="foot">决定「内外不一致」的程度</div>
+    </div>
+
+    <div class="stage s6">
+      <div class="top"><div class="num">06</div><div class="title">表达</div></div>
+      <div class="en">EXPRESSION</div>
+      <div class="lines">shown vs felt<br>泄漏：声音 · 措辞 · 沉默</div>
+      <div class="tags"><span class="tag t">表达抑制</span></div>
+      <div class="foot">用户唯一直接看到的一层</div>
+    </div>
+  </div>
+
+  <!-- ============ MOOD ============ -->
+  <div class="layer mood-label">
+    <div class="k">中速变量 · 状态</div>
+    <div class="n">心境 mood</div>
+    <div class="t">小时 ~ 天</div>
+    <div class="h">不是情绪本身，是情绪的「背景色」。<br>它会被事件推走，也会反过来染色评价。</div>
+  </div>
+
+  <div class="layer mood-band">
+    <div class="txt">
+      <div class="h">PAD 三轴 + 惯性</div>
+      <div class="d">事件把它推离基线，它按半衰期衰减回来；同一件小事，心情好和心情差，评价结果不一样。</div>
+    </div>
+    <svg class="decay" viewBox="0 0 205 78">
+      <line x1="12" y1="56" x2="196" y2="56" stroke="#C9B4E6" stroke-width="1" stroke-dasharray="3 4"/>
+      <path d="M 12 56 L 26 56 L 26 16 C 45 16, 62 44, 92 51 S 150 56, 196 56"
+            stroke="#7E22CE" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <line x1="26" y1="16" x2="26" y2="56" stroke="#B79BDD" stroke-width="1"/>
+      <text x="34" y="28" font-size="9.5" fill="#8A6BA8" font-family="PingFang SC, sans-serif">峰值</text>
+      <text x="118" y="72" font-size="9.5" fill="#8A6BA8" font-family="PingFang SC, sans-serif">半衰期 → 回到基线</text>
+    </svg>
+    <div class="formula">
+      <div class="mono">mood ← decay(mood) + Σ Δepisode</div>
+      <div class="mono small">采样频率 &gt; 1 / 持续时间</div>
+    </div>
+  </div>
+
+  <!-- ============ FOOTER ============ -->
+  <div class="layer foot-left">
+    <b>派生量（不单独存）：</b>强度 = 偏离基线的幅度 · 冲突 = 行动倾向的熵 · 掩饰 = |felt − shown|
+    <div class="timebar">
+      <span class="lbl">时间尺度</span>
+      <span class="seg" style="width:96px;background:#D99A3E"></span><span class="lbl">秒~分 事件</span>
+      <span class="seg" style="width:96px;background:#9B7BD8"></span><span class="lbl">小时~天 心境</span>
+      <span class="seg" style="width:96px;background:#4FA89E"></span><span class="lbl">天~月 关系</span>
+      <span class="seg" style="width:96px;background:#7D74D9"></span><span class="lbl">月~终生 参数</span>
+    </div>
+  </div>
+  <div class="layer foot-right">
+    v0.1 · 先跑通最小闭环<br>再用消融测试决定加什么
+  </div>
+
+</div>
+</body>
+</html>
