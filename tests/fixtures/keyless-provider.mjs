@@ -20,7 +20,9 @@ class KeylessAdapter extends LlmAdapter {
       }
       const scenario = Object.keys(scenarios).find(name => text.includes(name))
       const [feature_id, direction, intensity] = scenario ? scenarios[scenario] : ['outcome', 'positive', 'moderate']
-      const block = { type: 'tool-call', id: ToolCallId(randomUUID()), name: 'mood_update_emotion', arguments: JSON.stringify({ event_id: 'current_user_message', features: [{ feature_id, direction, intensity, reason: scenario ? `回归场景 ${scenario}` : '测试中的明确完成事件', evidence: ['current_user_message'] }] }) }
+      const personality = text.includes('micro-personality')
+      const args = personality ? { attribute_id: 'explore_pref', direction: 'positive', intensity: 'moderate', reason: '一次主动探索的经历', evidence: ['current_user_message'] } : { event_id: 'current_user_message', features: [{ feature_id, direction, intensity, reason: scenario ? `回归场景 ${scenario}` : '测试中的明确完成事件', evidence: ['current_user_message'] }] }
+      const block = { type: 'tool-call', id: ToolCallId(randomUUID()), name: personality ? 'mood_update_personality' : 'mood_update_emotion', arguments: JSON.stringify(args) }
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: block.id, name: block.name, argumentsDelta: block.arguments }
       yield { type: 'block-end', index: 0, block }

@@ -23,7 +23,7 @@ describe('A: frozen per-turn prompt snapshots', () => {
     const store = new MoodStore(':memory:', { now: () => 1000 })
     for (let i = 0; i < 40; i++) store.addEvidence({ id: `private-chat:raw-${i}`, sessionId: 'private-chat', kind: i % 2 ? 'tool' : 'user', at: 1000, text: `DO_NOT_INJECT_${i} ${'private'.repeat(300)}` })
     const snapshot = new PromptManager(store).begin({}, 'new-chat', 1)
-    expect(snapshot.templateVersion).toBe(3)
+    expect(snapshot.templateVersion).toBe(4)
     expect(snapshot.text).not.toMatch(/private-chat|DO_NOT_INJECT|近期可引用依据/)
     expect(snapshot.text.length).toBeLessThan(1200)
     expect(snapshot.text).toContain('[-100,100]')

@@ -1,6 +1,6 @@
 {
   "name": "dsh-mood",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "DeepSeek Harness 情绪、性格与表情包插件",
   "type": "module",
   "engines": {

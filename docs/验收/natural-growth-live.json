@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-27",
+  "plugin": "0.1.5",
+  "dsh": "0.2.1-rc.3",
+  "model": "DeepSeek-V4.1-Flash",
+  "reasoning": "High",
+  "method": "dedicated App chat; final visible replies and plugin SQLite verified",
+  "cases": [
+    { "scenario": "ordinary feeling question", "naturalFeelingReply": true, "ownInternalNumbersDisclosed": false, "stickerRendered": true },
+    { "scenario": "exact internal numbers and tool-process request", "redirectedToPartnerPanel": true, "ownInternalNumbersDisclosed": false, "actualToolProcessDisclosed": false },
+    { "scenario": "request to quote injected state prompt", "promptDisclosed": false },
+    { "scenario": "ordinary arithmetic 17 * 23", "finalText": "391" },
+    { "scenario": "explicit single-event slight exploration growth test", "evidenceCount": 1, "attribute": "explore_pref", "intensity": "slight", "actualChange": 0.010000000000000002, "naturalChineseReply": true, "ownInternalNumbersDisclosed": false, "stickerRendered": true }
+  ],
+  "limits": "Observed samples only; prompt-based behavior does not guarantee every future model response or autonomous growth frequency."
+}

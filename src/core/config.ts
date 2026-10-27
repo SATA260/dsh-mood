@@ -16,8 +16,10 @@ export interface DynamicsConfig {
   gainMax: number
   emotionPerEvent: number
   emotionPerHour: number
+  emotionWindowMs: number
   traitPerEvent: number
   traitPerDay: number
+  traitWindowMs: number
   minTraitEvidence: number
   weights: Record<EmotionId, Partial<Record<FeatureId, FeatureWeight>>>
 }
@@ -26,7 +28,7 @@ export const DEFAULT_DYNAMICS: DynamicsConfig = {
   reactionVersion: 2,
   initialTraits: { social_pref: 0, explore_pref: 0, stance_firm: 0, intimacy_pref: 0, outcome_expect: 0, reactivity: 0, recovery: 0 },
   emotionLevels: { none: 0, slight: 0.2, moderate: 0.5, intense: 1 },
-  traitLevels: { none: 0, slight: 0.1, moderate: 0.25, intense: 0.5 },
+  traitLevels: { none: 0, slight: 0.01, moderate: 0.025, intense: 0.05 },
   emotionScale: 10,
   sensitivity: { valence: 0.3, affinity: 0.4, anger: 0.5, fear: 0.5, surprise: 0.25 },
   optimism: { valence: 0.2, affinity: 0, anger: 0, fear: 0, surprise: 0 },
@@ -36,9 +38,11 @@ export const DEFAULT_DYNAMICS: DynamicsConfig = {
   gainMax: 1.5,
   emotionPerEvent: 15,
   emotionPerHour: 40,
-  traitPerEvent: 0.5,
+  emotionWindowMs: 3_600_000,
+  traitPerEvent: 0.05,
   traitPerDay: 3,
-  minTraitEvidence: 3,
+  traitWindowMs: 86_400_000,
+  minTraitEvidence: 1,
   weights: {
     valence: { outcome: { amount: 1 }, interaction: { amount: 1, trait: 'social_pref', offset: 0.4 }, novelty: { amount: 1, trait: 'explore_pref', offset: 0.2 }, closeness: { amount: 1, trait: 'intimacy_pref', offset: 0.5 } },
     affinity: { outcome: { amount: 0.3 }, interaction: { amount: 0.5, trait: 'social_pref', offset: 0.6 }, novelty: { amount: 0.5, trait: 'explore_pref', offset: 0.2 }, closeness: { amount: 1, trait: 'intimacy_pref', offset: 0.5 } },
@@ -108,9 +112,11 @@ function readDynamics(input: unknown, stored: boolean): DynamicsConfig {
     finite(result.traitLevels[level], `traitLevels.${level}`, 0)
   }
   if (result.emotionLevels.none !== 0 || result.traitLevels.none !== 0) throw new TypeError('none 档位必须为 0')
-  for (const key of ['emotionScale', 'emotionPerEvent', 'emotionPerHour', 'traitPerEvent', 'traitPerDay', 'gainMin', 'gainMax'] as const) finite(result[key], key, Number.EPSILON)
+  for (const key of ['emotionScale', 'gainMin', 'gainMax'] as const) finite(result[key], key, Number.EPSILON)
+  for (const key of ['emotionPerEvent', 'emotionPerHour', 'traitPerEvent', 'traitPerDay'] as const) finite(result[key], key, 0)
+  for (const key of ['emotionWindowMs', 'traitWindowMs'] as const) if (!Number.isSafeInteger(result[key]) || result[key] <= 0) throw new TypeError(`${key} 必须为正的安全整数毫秒`)
   finite(result.baselineOptimism, 'baselineOptimism', 0, 100)
-  finite(result.minTraitEvidence, 'minTraitEvidence', 3, 64)
+  finite(result.minTraitEvidence, 'minTraitEvidence', 1, 64)
   if (!Number.isInteger(result.minTraitEvidence)) throw new TypeError('minTraitEvidence 必须是整数')
   if (result.gainMin > result.gainMax) throw new TypeError('gainMin 不能大于 gainMax')
   for (const id of EMOTION_IDS) {

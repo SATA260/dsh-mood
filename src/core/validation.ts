@@ -1,5 +1,5 @@
-import { FEATURE_IDS, INTENSITIES, PRESENCE_FEATURE_IDS, TRAIT_IDS } from '../shared/types.js'
-import type { EmotionInput, TraitInput, Traits } from '../shared/types.js'
+import { EMOTION_DEFINITIONS, EMOTION_IDS, FEATURE_IDS, INTENSITIES, PRESENCE_FEATURE_IDS, TRAIT_IDS } from '../shared/types.js'
+import type { EmotionInput, Emotions, TraitInput, Traits } from '../shared/types.js'
 
 export class InputError extends Error {
   override name = 'InputError'
@@ -70,4 +70,15 @@ export function parseTraitPatch(input: unknown): Partial<Traits> {
   if (!Object.keys(patch).length) throw new InputError('没有需要保存的修改')
   for (const value of Object.values(patch)) if (typeof value !== 'number' || !Number.isFinite(value) || value < -100 || value > 100) throw new InputError('性格数值必须在 -100～100 内')
   return patch as Partial<Traits>
+}
+
+export function parseEmotionPatch(input: unknown): Partial<Emotions> {
+  const patch = record(input, '情绪修改')
+  keys(patch, [...EMOTION_IDS])
+  if (!Object.keys(patch).length) throw new InputError('没有需要保存的修改')
+  for (const d of EMOTION_DEFINITIONS) {
+    const value = patch[d.id]
+    if (Object.hasOwn(patch, d.id) && (typeof value !== 'number' || !Number.isFinite(value) || value < d.min || value > d.max)) throw new InputError(`${d.name}必须在 ${d.min}～${d.max} 内`)
+  }
+  return patch as Partial<Emotions>
 }

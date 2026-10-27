@@ -131,13 +131,20 @@ export interface PromptSnapshot {
 export interface HistoryPage { items: HistoryEntry[]; nextCursor?: number }
 export interface StickerAsset { dataUrl: string }
 export interface TraitEdit { patch: Partial<Traits>; expectedVersion: number }
+export interface EmotionEdit { patch: Partial<Emotions>; expectedVersion: number }
+export interface RateRule { perEvent: number; windowMs: number; perWindow: number }
+export interface RulesSnapshot { revision: number; emotion: RateRule; personality: RateRule }
+export interface RulesUpdate { expectedRevision: number; emotion: RateRule; personality: RateRule }
 export interface EventInvalidation { eventId: number; expectedVersion: number; reason?: string }
 
 /** 浏览器只通过这个接口访问宿主，不持有引擎或存储对象。 */
 export interface MoodApi {
+  getRules(): Promise<RulesSnapshot>
+  setRules(request: RulesUpdate): Promise<RulesSnapshot>
   getState(): Promise<StateSnapshot>
   listChanges(request: { cursor?: number; limit?: number }): Promise<HistoryPage>
   setTraits(request: TraitEdit): Promise<MutationResult>
+  setEmotions(request: EmotionEdit): Promise<MutationResult>
   invalidateEvent(request: EventInvalidation): Promise<MutationResult>
   getPromptSnapshot(request: { sessionId: string; turn?: number }): Promise<PromptSnapshot | null>
 }

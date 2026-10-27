@@ -24,9 +24,12 @@ export async function apply(ctx: Context): Promise<void> {
   const ctx = child
   const remote = ctx.remote.mood
   const api: PanelApi = {
+    getRules: async () => unwrap(await remote.getRules()),
+    setRules: async request => unwrap(await remote.setRules(request)),
     getState: async () => unwrap(await remote.getState()),
     listChanges: async request => unwrap(await remote.listChanges(request)),
     setTraits: async request => unwrap(await remote.setTraits(request)),
+    setEmotions: async request => unwrap(await remote.setEmotions(request)),
     invalidateEvent: async request => unwrap(await remote.invalidateEvent(request)),
     getPromptSnapshot: async request => unwrap(await remote.getPromptSnapshot(request)),
     watchState: () => remote.watchState(),

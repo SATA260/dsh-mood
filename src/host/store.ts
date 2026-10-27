@@ -5,9 +5,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { baseline, clamp, decay, emotionReaction, halfLives } from '../core/math.js'
 import { resolveDynamics, restoreDynamics } from '../core/config.js'
 import type { DynamicsConfig } from '../core/config.js'
-import { InputError, parseEmotion, parseTrait, parseTraitPatch, VersionConflict } from '../core/validation.js'
+import { InputError, parseEmotion, parseEmotionPatch, parseTrait, parseTraitPatch, VersionConflict } from '../core/validation.js'
+import { parseRules, parseRulesUpdate, RulesConflict, windowLabel } from '../core/rules.js'
 import { EMOTION_DEFINITIONS, EMOTION_IDS, TRAIT_DEFINITIONS, TRAIT_IDS } from '../shared/types.js'
-import type { CallContext, EmotionInput, Emotions, Evidence, HistoryEntry, HistoryPage, MutationResult, ParameterId, PromptSnapshot, StateSnapshot, TraitInput, Traits } from '../shared/types.js'
+import type { CallContext, EmotionInput, Emotions, Evidence, HistoryEntry, HistoryPage, MutationResult, ParameterId, PromptSnapshot, RulesSnapshot, RulesUpdate, StateSnapshot, TraitInput, Traits } from '../shared/types.js'
 
 interface EngineState { at: number; traits: Traits; emotions: Emotions; configVersion: string }
 interface Projection { after: EngineState; actualChanges: Partial<Record<ParameterId, number>>; limited: string[]; effectSummary?: string }
@@ -26,7 +27,6 @@ interface CommandRow {
 }
 interface EmotionPayload { input: EmotionInput; sourceTraits: Traits }
 interface TraitPayload { input: TraitInput }
-interface BudgetItem { at: number; kind: string; changes: Partial<Record<ParameterId, number>> }
 type DbRow = Record<string, unknown>
 
 // A formula change must introduce a new rule version and a replay migration.
@@ -42,22 +42,21 @@ function delta(before: StateSnapshot, after: StateSnapshot): Partial<Record<Para
 /** profile 内唯一的状态写入者；SQLite 事务同时提交状态、预算和幂等结果。 */
 export class MoodStore {
   readonly db: DatabaseSync
-  readonly config: DynamicsConfig
-  readonly configVersion: string
+  get config(): DynamicsConfig { return this.loadConfig(this.readState().configVersion) }
+  get configVersion(): string { return this.readState().configVersion }
   private readonly now: () => number
   private readonly listeners = new Set<(state: StateSnapshot) => void>()
   private closed = false
 
   constructor(path: string, options: { dynamics?: unknown; now?: () => number; busyTimeoutMs?: number } = {}) {
-    this.config = resolveDynamics(options.dynamics)
-    this.configVersion = configHash(this.config)
+    const startup = resolveDynamics(options.dynamics)
     this.now = options.now ?? Date.now
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
     this.db = new DatabaseSync(path, { timeout: options.busyTimeoutMs ?? 5000 })
     try {
       this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;')
       const version = this.db.prepare('PRAGMA user_version').get() as DbRow
-      if (Number(version.user_version) > 1) throw new Error('状态数据库来自较新版本，无法打开；原数据未修改。')
+      if (Number(version.user_version) > 2) throw new Error('状态数据库来自较新版本，无法打开；原数据未修改。')
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
         CREATE TABLE IF NOT EXISTS configs (version TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
@@ -69,32 +68,77 @@ export class MoodStore {
           valid INTEGER NOT NULL DEFAULT 1, needs_review INTEGER NOT NULL DEFAULT 0, projection TEXT
         ) STRICT;
         CREATE INDEX IF NOT EXISTS commands_time ON commands(effective_at,id);
+        CREATE INDEX IF NOT EXISTS commands_budget ON commands(kind,effective_at,id);
         CREATE TABLE IF NOT EXISTS calls (key TEXT PRIMARY KEY, result TEXT NOT NULL) STRICT;
         CREATE TABLE IF NOT EXISTS prompt_snapshots (session_id TEXT NOT NULL, turn INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(session_id,turn)) STRICT;
         CREATE TABLE IF NOT EXISTS invalidations (id INTEGER PRIMARY KEY, command_id INTEGER NOT NULL REFERENCES commands(id), at REAL NOT NULL, reason TEXT NOT NULL) STRICT;
-        PRAGMA user_version=1;
+        PRAGMA user_version=2;
       `)
       this.transaction(() => {
-        this.db.prepare('INSERT OR IGNORE INTO configs VALUES (?,?)').run(this.configVersion, JSON.stringify(this.config))
-        if (!this.meta('state')) {
-          const state: EngineState = { at: this.now(), traits: structuredClone(this.config.initialTraits), emotions: baseline(this.config.initialTraits, this.config), configVersion: this.configVersion }
+        const previous = this.meta('state') ? this.readState() : undefined
+        const rawRules = this.meta('rules')
+        const legacy = previous ? this.loadConfig(previous.configVersion) : startup
+        const rules: RulesSnapshot = rawRules ? parseRules(parse(rawRules)) : {
+          revision: 0,
+          emotion: { perEvent: legacy.emotionPerEvent, windowMs: legacy.emotionWindowMs, perWindow: legacy.emotionPerHour },
+          personality: { perEvent: Math.min(legacy.traitPerEvent, 0.05), windowMs: legacy.traitWindowMs, perWindow: legacy.traitPerDay },
+        }
+        const config = this.withRules(startup, rules)
+        const configVersion = configHash(config)
+        this.db.prepare('INSERT OR IGNORE INTO configs VALUES (?,?)').run(configVersion, JSON.stringify(config))
+        if (!previous) {
+          const state: EngineState = { at: this.now(), traits: structuredClone(config.initialTraits), emotions: baseline(config.initialTraits, config), configVersion }
           this.putMeta('origin', state)
           this.putMeta('state', state)
           this.putMeta('version', 0)
         } else {
-          this.readState()
-          const previous = this.readState()
-          if (previous.configVersion !== this.configVersion) {
-            const id = this.insertCommand('configuration', Math.max(this.now(), previous.at), { configVersion: this.configVersion }, [], '计算配置变更')
+          if (previous.configVersion !== configVersion) {
+            const id = this.insertCommand('configuration', Math.max(this.now(), previous.at), { configVersion }, [], '计算配置变更')
             this.recompute(id)
             this.bumpVersion()
           }
         }
+        if (!rawRules) this.putMeta('rules', rules)
       })
     } catch (error) {
       this.db.close()
       throw error
     }
+  }
+
+  private withRules(base: DynamicsConfig, rules: RulesSnapshot): DynamicsConfig {
+    const cap = rules.personality.perEvent
+    return resolveDynamics({ ...base,
+      emotionPerEvent: rules.emotion.perEvent, emotionWindowMs: rules.emotion.windowMs, emotionPerHour: rules.emotion.perWindow,
+      traitPerEvent: cap, traitWindowMs: rules.personality.windowMs, traitPerDay: rules.personality.perWindow,
+      traitLevels: { none: 0, slight: cap * 0.2, moderate: cap * 0.5, intense: cap }, minTraitEvidence: 1,
+    })
+  }
+  getRules(): RulesSnapshot {
+    const raw = this.meta('rules')
+    if (!raw) throw new Error('缺少已初始化的变化规则；未重置设置。')
+    return parseRules(parse(raw))
+  }
+  setRules(input: RulesUpdate): RulesSnapshot {
+    const request = parseRulesUpdate(input)
+    let changed = false
+    const result = this.transaction(() => {
+      const current = this.getRules()
+      if (request.expectedRevision !== current.revision) throw new RulesConflict()
+      if (JSON.stringify([current.emotion, current.personality]) === JSON.stringify([request.emotion, request.personality])) return current
+      const next: RulesSnapshot = { revision: current.revision + 1, emotion: request.emotion, personality: request.personality }
+      const config = this.withRules(this.config, next)
+      const configVersion = configHash(config)
+      this.db.prepare('INSERT OR IGNORE INTO configs VALUES (?,?)').run(configVersion, JSON.stringify(config))
+      const id = this.insertCommand('configuration', Math.max(this.now(), this.readState().at), { configVersion }, [], '用户修改变化规则')
+      this.recompute(id)
+      this.putMeta('rules', next)
+      this.bumpVersion()
+      changed = true
+      return next
+    })
+    if (changed) this.publish()
+    return result
   }
 
   close(): void {
@@ -220,9 +264,6 @@ export class MoodStore {
       .get(changed.effective_at, changed.effective_at, changed.id) as unknown as CommandRow | undefined
     let state = structuredClone(previous ? parse<Projection>(previous.projection!).after : parse<EngineState>(this.meta('origin')!))
     let config = this.loadConfig(state.configVersion)
-    const priorRows = this.db.prepare('SELECT kind,effective_at,projection FROM commands WHERE effective_at>=? AND (effective_at<? OR (effective_at=? AND id<?)) AND projection IS NOT NULL')
-      .all(changed.effective_at - 86_400_000, changed.effective_at, changed.effective_at, changed.id) as { kind: string; effective_at: number; projection: string }[]
-    const budget: BudgetItem[] = priorRows.map(row => ({ at: row.effective_at, kind: row.kind, changes: parse<Projection>(row.projection).actualChanges }))
     const rows = this.db.prepare('SELECT * FROM commands WHERE effective_at>? OR (effective_at=? AND id>=?) ORDER BY effective_at,id')
       .all(changed.effective_at, changed.effective_at, changed.id) as unknown as CommandRow[]
     let changedProjection: Projection | undefined
@@ -234,12 +275,18 @@ export class MoodStore {
       const limited: string[] = []
       const limits = new Set<string>()
       let effectSummary: string | undefined
-      const used = (kind: string, id: ParameterId, window: number): number => budget.reduce((sum, item) => item.kind === kind && item.at > row.effective_at - window ? sum + Math.abs(item.changes[id] ?? 0) : sum, 0)
+      const used = (kind: string, id: ParameterId, window: number): number => {
+        const value = this.db.prepare(`SELECT COALESCE(SUM(ABS(COALESCE(json_extract(projection,?),0))),0) AS total FROM commands
+          WHERE kind=? AND effective_at>? AND (effective_at<? OR (effective_at=? AND id<?)) AND projection IS NOT NULL`)
+          .get(`$.actualChanges.${id}`, kind, row.effective_at - window, row.effective_at, row.effective_at, row.id) as { total: number }
+        return value.total
+      }
       if (row.valid && row.kind === 'emotion') {
         const payload = parse<EmotionPayload>(row.payload)
         const reaction = emotionReaction(payload.sourceTraits, payload.input.features, config)
         for (const id of EMOTION_IDS) {
-          const remaining = Math.min(config.emotionPerEvent, Math.max(0, config.emotionPerHour - used('emotion', id, 3_600_000)))
+          const windowRemaining = Math.max(0, config.emotionPerHour - used('emotion', id, config.emotionWindowMs))
+          const remaining = Math.min(config.emotionPerEvent, windowRemaining)
           const before = state.emotions[id]
           const after = clamp(before + clamp(reaction[id], -remaining, remaining), id === 'valence' || id === 'affinity' ? -100 : 0, 100)
           const actual = after - before
@@ -247,7 +294,7 @@ export class MoodStore {
           if (Math.abs(actual - reaction[id]) > 1e-10) {
             limited.push(id)
             if (Math.abs(reaction[id]) > config.emotionPerEvent) limits.add('单事件额度')
-            if (Math.abs(reaction[id]) > Math.max(0, config.emotionPerHour - used('emotion', id, 3_600_000))) limits.add('一小时滚动额度')
+            if (Math.abs(reaction[id]) > windowRemaining) limits.add(`${windowLabel(config.emotionWindowMs)}滚动额度`)
             if (Math.abs(actual - clamp(reaction[id], -remaining, remaining)) > 1e-10) limits.add('量程边界')
           }
           state.emotions[id] = after
@@ -259,16 +306,21 @@ export class MoodStore {
         const { input } = parse<TraitPayload>(row.payload)
         const id = input.attribute_id
         const raw = (input.direction === 'positive' ? 1 : -1) * config.traitLevels[input.intensity]
-        const remaining = Math.min(config.traitPerEvent, Math.max(0, config.traitPerDay - used('personality', id, 86_400_000)))
+        const remaining = Math.min(config.traitPerEvent, Math.max(0, config.traitPerDay - used('personality', id, config.traitWindowMs)))
         const actual = clamp(state.traits[id] + clamp(raw, -remaining, remaining), -100, 100) - state.traits[id]
         state.traits[id] += actual
         if (actual !== 0) changes[id] = actual
         if (Math.abs(actual - raw) > 1e-10) limited.push(id)
+        if (actual === 0) effectSummary = raw === 0 ? '性格未变化：程度为 none 或单事件额度为 0。' : `性格未变化：受${windowLabel(config.traitWindowMs)}滚动额度或量程边界限制。`
       } else if (row.valid && row.kind === 'manual') {
-        const { patch } = parse<{ patch: Partial<Traits> }>(row.payload)
+        const { patch, emotionPatch } = parse<{ patch?: Partial<Traits>; emotionPatch?: Partial<Emotions> }>(row.payload)
         for (const id of TRAIT_IDS) {
-          const value = patch[id]
+          const value = patch?.[id]
           if (value !== undefined && value !== state.traits[id]) { changes[id] = value - state.traits[id]; state.traits[id] = value }
+        }
+        for (const id of EMOTION_IDS) {
+          const value = emotionPatch?.[id]
+          if (value !== undefined && value !== state.emotions[id]) { changes[id] = value - state.emotions[id]; state.emotions[id] = value }
         }
       } else if (row.valid && row.kind === 'configuration') {
         state.configVersion = parse<{ configVersion: string }>(row.payload).configVersion
@@ -277,7 +329,6 @@ export class MoodStore {
       const projection: Projection = { after: structuredClone(state), actualChanges: changes, limited, ...(effectSummary ? { effectSummary } : {}) }
       update.run(JSON.stringify(projection), row.id)
       if (row.id === changedId) changedProjection = projection
-      budget.push({ at: row.effective_at, kind: row.kind, changes })
     }
     this.putMeta('state', state)
     if (!changedProjection) throw new Error('缺少变化检查点')
@@ -320,7 +371,10 @@ export class MoodStore {
         feature.evidence.forEach(id => evidenceIds.add(id))
       }
       proposal.event_id = source.id
-      const id = this.insertCommand('emotion', source.at, { input: proposal, sourceTraits: source.traits } satisfies EmotionPayload, [...evidenceIds], proposal.features.map(f => f.reason).join('；'), source.id)
+      // New writes obey current rules, even when their source predates a settings save.
+      // Source traits stay frozen at the real event; persisted older events keep their timeline.
+      const at = Math.max(this.now(), this.readState().at, source.at)
+      const id = this.insertCommand('emotion', at, { input: proposal, sourceTraits: source.traits } satisfies EmotionPayload, [...evidenceIds], proposal.features.map(f => f.reason).join('；'), source.id)
       const projection = this.recompute(id)
       this.bumpVersion()
       return this.result(Object.keys(projection.actualChanges).length ? 'applied' : 'unchanged', projection.effectSummary ?? '已保存本次情绪变化。', projection.actualChanges, projection.limited)
@@ -332,17 +386,16 @@ export class MoodStore {
       const proposal = parseTrait(input)
       proposal.evidence = this.resolveEvidenceIds(proposal.evidence, ctx)
       for (const id of proposal.evidence) if (this.db.prepare('SELECT id FROM commands WHERE source_id=? AND valid=0').get(id)) throw new InputError('引用的情绪事件已撤销，不能再用于新的性格变化。')
-      if (proposal.evidence.length < this.config.minTraitEvidence) throw new InputError(`性格慢变至少需要 ${this.config.minTraitEvidence} 个不同事件支持。`)
       const patternKey = JSON.stringify([proposal.attribute_id, [...proposal.evidence].sort()])
       if (this.db.prepare('SELECT id FROM commands WHERE pattern_key=?').get(patternKey)) throw new InputError('这组性格依据已经使用，不能重复累加。')
       const used = this.db.prepare("SELECT evidence_ids FROM commands WHERE kind='personality' AND json_extract(payload,'$.input.attribute_id')=?").all(proposal.attribute_id) as { evidence_ids: string }[]
       const usedIds = new Set(used.flatMap(row => parse<string[]>(row.evidence_ids)))
-      if (proposal.evidence.some(id => usedIds.has(id))) throw new InputError('这个属性已使用其中的依据；需要至少三个尚未用于该属性的不同事件。')
+      if (proposal.evidence.some(id => usedIds.has(id))) throw new InputError('这个属性已使用其中的依据；需要尚未用于该属性的新事件。')
       const at = Math.max(this.now(), this.readState().at)
       const id = this.insertCommand('personality', at, { input: proposal } satisfies TraitPayload, proposal.evidence, proposal.reason, undefined, patternKey)
       const projection = this.recompute(id)
       this.bumpVersion()
-      return this.result(Object.keys(projection.actualChanges).length ? 'applied' : 'unchanged', projection.limited.length ? '已按性格慢变额度保存。' : '已保存性格慢变。', projection.actualChanges, projection.limited)
+      return this.result(Object.keys(projection.actualChanges).length ? 'applied' : 'unchanged', projection.effectSummary ?? (projection.limited.length ? '已按性格慢变额度保存。' : '已保存性格慢变。'), projection.actualChanges, projection.limited)
     })
   }
 
@@ -356,6 +409,21 @@ export class MoodStore {
       const projection = this.recompute(id)
       this.bumpVersion()
       return this.result('applied', '已保存；当前情绪保持连续，之后按新性格回稳。', projection.actualChanges)
+    })
+    if (response.status === 'applied') this.publish()
+    return response
+  }
+
+  setEmotions(patchInput: unknown, expectedVersion: number): MutationResult {
+    const patch = parseEmotionPatch(patchInput)
+    const response = this.transaction(() => {
+      if (expectedVersion !== this.version()) throw new VersionConflict()
+      const before = this.snapshot()
+      if (Object.entries(patch).every(([id, value]) => before.emotions[id as keyof Emotions] === value)) return this.result('unchanged', '情绪没有变化。')
+      const id = this.insertCommand('manual', before.at, { emotionPatch: patch }, [], '用户手动修改情绪')
+      const projection = this.recompute(id)
+      this.bumpVersion()
+      return this.result('applied', '情绪已保存；之后继续按当前性格自然回稳。', projection.actualChanges)
     })
     if (response.status === 'applied') this.publish()
     return response

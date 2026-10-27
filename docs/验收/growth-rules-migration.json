@@ -1,0 +1,20 @@
+{
+  "plugin": "0.1.5",
+  "sourceSchema": 2,
+  "traitsPreserved": true,
+  "maxEmotionalJump": 0,
+  "oldRowsPreserved": true,
+  "rules": {
+    "revision": 0,
+    "emotion": {
+      "perEvent": 15,
+      "windowMs": 3600000,
+      "perWindow": 40
+    },
+    "personality": {
+      "perEvent": 0.05,
+      "windowMs": 86400000,
+      "perWindow": 3
+    }
+  }
+}

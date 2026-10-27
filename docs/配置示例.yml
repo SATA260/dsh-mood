@@ -1,3 +1,4 @@
+# 变化额度只在首次初始化／迁移时导入；后续以页面保存的变化规则为准。
 # 合并到目标 profile 的 cordis.patch.yml；不要覆盖已有 patch。
 - id: dsh-mood
   config:
@@ -18,9 +19,9 @@
         intense: 1
       traitLevels:
         none: 0
-        slight: 0.1
-        moderate: 0.25
-        intense: 0.5
+        slight: 0.01
+        moderate: 0.025
+        intense: 0.05
       halfLivesMs:
         valence: 14400000
         affinity: 21600000
@@ -28,7 +29,9 @@
         fear: 7200000
         surprise: 300000
       emotionPerEvent: 15
-      emotionPerHour: 40
-      traitPerEvent: 0.5
+      emotionPerHour: 40 # 首次初始化／迁移后，在页面“变化规则”配置。
+      emotionWindowMs: 3600000
+      traitPerEvent: 0.05
       traitPerDay: 3
-      minTraitEvidence: 3
+      traitWindowMs: 86400000
+      minTraitEvidence: 1
